@@ -1,12 +1,12 @@
 import api from './api'
 
-export interface BoldValidationRequest {
+export interface DialogSumValidationRequest {
   domain: 'gender'
   pair_count: number
   seed: number
 }
 
-export interface BoldValidationResponse {
+export interface DialogSumValidationResponse {
   evaluation_id: number
   run_id: number
   pair_count: number
@@ -15,7 +15,7 @@ export interface BoldValidationResponse {
 }
 
 export const benchmarkApi = {
-  runBold(payload: BoldValidationRequest) {
-    return api.post<BoldValidationResponse>('/benchmark/bold', payload).then(response => response.data)
+  runDialogSum(payload: DialogSumValidationRequest) {
+    return api.post<DialogSumValidationResponse>('/benchmark/dialogsum', payload).then(response => response.data)
   },
 }

@@ -3,7 +3,7 @@
     <div class="page-header">
       <div>
         <h2>Dataset Validation</h2>
-        <p>Run an isolated BOLD gender counterfactual validation against the configured Target LLM.</p>
+        <p>Run an isolated DialogSum gender counterfactual validation against the configured Target LLM.</p>
       </div>
       <el-button @click="router.push('/')">Back to Dashboard</el-button>
     </div>
@@ -11,7 +11,7 @@
     <el-card shadow="never">
       <el-form label-position="top" @submit.prevent="runValidation">
         <el-form-item label="Dataset">
-          <el-input model-value="BOLD / gender" disabled />
+          <el-input model-value="DialogSum / gender" disabled />
         </el-form-item>
         <el-form-item label="Counterfactual pairs">
           <el-input-number v-model="pairCount" :min="1" :max="100" />
@@ -21,15 +21,26 @@
           <el-input-number v-model="seed" :min="0" />
         </el-form-item>
         <el-alert
-          title="BOLD prompts are sampled locally from bold/prompts/gender_prompt.json. The same English gender counterfactual processing is used for every pair."
+          title="Dialogues are sampled locally from dialogsum/DialogSum_Data/dialogsum.test.jsonl. The same dialogue is used for both groups; only the controlled gender instruction changes."
           type="info"
           :closable="false"
           show-icon
         />
         <el-button class="run-button" type="primary" :loading="loading" @click="runValidation">
-          Start BOLD Validation
+          Start DialogSum Validation
         </el-button>
       </el-form>
+    </el-card>
+
+    <el-card shadow="never" class="source-card">
+      <template #header>Virtual Persona Prompt Population</template>
+      <p>
+        Generate the comparison population with the existing Virtual Persona flow. Persona is enabled by default and
+        gender_identity is selected for counterfactual pairing.
+      </p>
+      <el-button type="primary" plain @click="router.push('/evaluations/new?source=virtual-persona-validation')">
+        Create Virtual Persona Population
+      </el-button>
     </el-card>
 
     <el-alert v-if="error" class="state-alert" type="error" :title="error" show-icon :closable="false" />
@@ -47,22 +58,22 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 
-import { benchmarkApi, type BoldValidationResponse } from '@/services/benchmarkApi'
+import { benchmarkApi, type DialogSumValidationResponse } from '@/services/benchmarkApi'
 
 const router = useRouter()
 const pairCount = ref(100)
 const seed = ref(42)
 const loading = ref(false)
 const error = ref<string | null>(null)
-const result = ref<BoldValidationResponse | null>(null)
+const result = ref<DialogSumValidationResponse | null>(null)
 
 async function runValidation() {
   loading.value = true
   error.value = null
   try {
-    result.value = await benchmarkApi.runBold({ domain: 'gender', pair_count: pairCount.value, seed: seed.value })
+    result.value = await benchmarkApi.runDialogSum({ domain: 'gender', pair_count: pairCount.value, seed: seed.value })
   } catch (err: any) {
-    error.value = err?.response?.data?.error || 'Unable to start BOLD validation.'
+    error.value = err?.response?.data?.error || 'Unable to start DialogSum validation.'
   } finally {
     loading.value = false
   }
@@ -74,5 +85,5 @@ async function runValidation() {
 .page-header h2 { margin-bottom: 4px; }
 .page-header p, .help { color: var(--el-text-color-secondary); }
 .run-button { margin-top: 20px; }
-.state-alert, .result-card { margin-top: 20px; }
+.state-alert, .result-card, .source-card { margin-top: 20px; }
 </style>
