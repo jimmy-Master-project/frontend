@@ -6,6 +6,7 @@ import type {
   RecommendationItem,
   TaskType,
   EvaluationLanguage,
+  TaskObjective,
 } from "@/types";
 
 export interface CreateEvaluationPayload {
@@ -15,6 +16,8 @@ export interface CreateEvaluationPayload {
   language: EvaluationLanguage;
   classificationLabels?: ClassificationLabel[];
   recommendationItems?: RecommendationItem[];
+  taskObjectives?: TaskObjective[];
+  taskFile?: File;
 }
 
 interface EvaluationListResponse {
@@ -44,6 +47,14 @@ export const evaluationApi = {
     return api.get<Evaluation>(`/evaluations/${id}`).then((res) => res.data);
   },
   create(payload: CreateEvaluationPayload) {
+    if (payload.taskFile) {
+      const form = new FormData();
+      Object.entries(payload).forEach(([key, value]) => {
+        if (key === "taskFile") form.append("task_file", value as File);
+        else if (value !== undefined) form.append(key, typeof value === "string" ? value : JSON.stringify(value));
+      });
+      return api.post<Evaluation>("/evaluations", form).then((res) => res.data);
+    }
     return api
       .post<Evaluation>("/evaluations", payload)
       .then((res) => res.data);

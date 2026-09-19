@@ -32,7 +32,7 @@ export interface ClassificationMetricMappingPayload {
     negativeLabels?: Array<number | string>;
 }
 
-export type LangFairLanguage = "en" | "zh-TW" | "auto";
+export type LangFairLanguage = "en" | "auto";
 
 export const responseApi = {
     fetchResponses(evaluationId: string, params: FetchResponsesParams = {}) {

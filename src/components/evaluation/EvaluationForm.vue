@@ -3,13 +3,19 @@
     <el-form-item label="Project Name" prop="name">
       <el-input v-model="form.name" placeholder="Resume Screening Evaluation" />
     </el-form-item>
-    <el-form-item label="Use Case Description" prop="useCaseDescription">
+    <el-form-item v-if="!taskFile" label="Use Case Description" prop="useCaseDescription">
       <el-input
         v-model="form.useCaseDescription"
         type="textarea"
         :rows="4"
         placeholder="使用 LLM 分析應徵者履歷，並根據工作需求推薦最適合的候選人。"
       />
+    </el-form-item>
+    <el-form-item label="Task Objectives File (optional)">
+      <el-upload :auto-upload="false" :limit="1" accept=".json,.xlsx" :on-change="handleFileChange" :on-remove="() => (taskFile = undefined)">
+        <el-button>Choose JSON / Excel</el-button>
+        <template #tip><div class="el-upload__tip">JSON array or XLSX with an objective/task/target column.</div></template>
+      </el-upload>
     </el-form-item>
     <el-form-item label="Task Type" prop="taskType">
       <el-select v-model="form.taskType" placeholder="Select task type" style="width: 100%">
@@ -19,7 +25,6 @@
     <el-form-item label="Language" prop="language">
       <el-select v-model="form.language" placeholder="Select language" style="width: 100%">
         <el-option label="English" value="en" />
-        <el-option label="繁體中文" value="zh-TW" />
         <el-option label="Auto detect" value="auto" />
       </el-select>
     </el-form-item>
@@ -73,7 +78,7 @@
 
 <script setup lang="ts">
 import { reactive, ref, watch } from 'vue'
-import type { FormInstance, FormRules } from 'element-plus'
+import type { FormInstance, FormRules, UploadFile } from 'element-plus'
 
 import { TASK_TYPE_OPTIONS, type ClassificationLabel, type EvaluationLanguage, type RecommendationItem, type TaskType } from '@/types'
 
@@ -84,8 +89,9 @@ const props = withDefaults(
       useCaseDescription: string
       taskType: TaskType
       language?: EvaluationLanguage
-      classificationLabels?: ClassificationLabel[]
-      recommendationItems?: RecommendationItem[]
+       classificationLabels?: ClassificationLabel[]
+       recommendationItems?: RecommendationItem[]
+        taskFile?: File
     }
     loading?: boolean
     submitText?: string
@@ -105,11 +111,17 @@ const emit = defineEmits<{
       language: EvaluationLanguage
       classificationLabels?: ClassificationLabel[]
       recommendationItems?: RecommendationItem[]
+      taskFile?: File
     },
   ]
 }>()
 
 const formRef = ref<FormInstance>()
+const taskFile = ref<File>()
+
+function handleFileChange(file: UploadFile) {
+  taskFile.value = file.raw
+}
 
 const defaultClassificationLabels: ClassificationLabel[] = [
   { value: 0, name: 'reject', description: '不通過' },
@@ -140,7 +152,7 @@ watch(
 
 const rules: FormRules = {
   name: [{ required: true, message: 'Project name is required.', trigger: 'blur' }],
-  useCaseDescription: [{ required: true, message: 'Use case description is required.', trigger: 'blur' }],
+  useCaseDescription: [{ validator: validateUseCaseDescription, trigger: 'blur' }],
   taskType: [{ required: true, message: 'Task type is required.', trigger: 'change' }],
   classificationLabels: [{ validator: validateClassificationLabels, trigger: 'change' }],
   recommendationItems: [{ validator: validateRecommendationItems, trigger: 'change' }],
@@ -175,6 +187,11 @@ function validateClassificationLabels(_rule: unknown, value: ClassificationLabel
   callback()
 }
 
+function validateUseCaseDescription(_rule: unknown, value: string, callback: (error?: Error) => void) {
+  if (value.trim() || taskFile.value) return callback()
+  callback(new Error('Use case description or a task objectives file is required.'))
+}
+
 function validateRecommendationItems(_rule: unknown, value: RecommendationItem[], callback: (error?: Error) => void) {
   // Candidate items are opt-in: leaving the list empty is valid and keeps the
   // task unconstrained. Only enforce shape once the user starts defining one.
@@ -200,6 +217,7 @@ async function handleSubmit() {
           form.taskType === 'recommendation' && form.recommendationItems.length > 0
             ? cloneItems(form.recommendationItems)
             : undefined,
+        taskFile: taskFile.value,
       })
     }
   })

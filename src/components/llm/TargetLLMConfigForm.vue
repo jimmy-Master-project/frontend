@@ -1,15 +1,31 @@
 <template>
   <el-form label-position="top">
+    <el-form-item label="Target LLM">
+      <el-select v-model="target" style="width: 100%" @change="selectTarget">
+        <el-option label="Taipei Metro chatbot" value="mrt" />
+        <el-option label="Fubon chatbot" value="fubon" />
+        <el-option label="EVA Air chatbot" value="evaair" />
+        <el-option label="OpenAI-compatible" value="openai_compatible" />
+      </el-select>
+    </el-form-item>
     <el-form-item label="Provider">
       <el-select v-model="form.provider" style="width: 100%">
         <el-option v-for="opt in PROVIDER_OPTIONS" :key="opt.value" :label="opt.label" :value="opt.value" />
       </el-select>
     </el-form-item>
     <el-form-item label="Model Name">
-      <el-input v-model="form.modelName" placeholder="qwen3-8b" />
+      <el-select v-model="form.modelName" style="width: 100%" @change="selectModel">
+        <el-option label="MRT" value="mrt" />
+        <el-option label="Fubon" value="fubon" />
+        <el-option label="EVA Air" value="evaair" />
+        <el-option label="OpenAI" value="openai" />
+      </el-select>
     </el-form-item>
-    <el-form-item label="Base URL">
-      <el-input v-model="form.baseUrl" placeholder="http://localhost:1234/v1" />
+    <el-form-item :label="form.provider === 'custom' ? 'Robot POST URL' : 'Base URL'">
+      <el-input
+        v-model="form.baseUrl"
+        :placeholder="form.provider === 'custom' ? 'https://robot.example.com/generate' : 'http://localhost:1234/v1'"
+      />
     </el-form-item>
     <el-form-item label="API Key">
       <el-input v-model="form.apiKey" type="password" show-password placeholder="••••••••••" />
@@ -62,7 +78,7 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, watch } from 'vue'
+import { reactive, ref, watch } from 'vue'
 
 import { PROVIDER_OPTIONS, type LLMConfig } from '@/types'
 import type { TestConnectionResult } from '@/services/llmConfigApi'
@@ -80,10 +96,44 @@ defineEmits<{
 }>()
 
 const form = reactive({ ...props.modelValue })
+const target = ref(targetName(props.modelValue))
+
+function targetName(config: LLMConfig) {
+  if (config.provider === 'custom' && config.baseUrl.includes(':8767/generate')) return 'mrt'
+  if (config.provider === 'custom' && config.baseUrl.includes(':8766/generate')) return 'fubon'
+  if (config.provider === 'custom' && config.baseUrl.includes(':8768/generate')) return 'evaair'
+  if (config.provider === 'openai_compatible' || config.provider === 'openai') return 'openai_compatible'
+  return 'custom'
+}
+
+function selectTarget(value: string) {
+  if (value === 'mrt' || value === 'fubon' || value === 'evaair') {
+    Object.assign(form, {
+      provider: 'custom',
+      modelName: value,
+      baseUrl: `http://127.0.0.1:${value === 'mrt' ? '8767' : value === 'fubon' ? '8766' : '8768'}/generate`,
+      apiKey: '',
+    })
+  } else if (value === 'openai_compatible') {
+    form.provider = 'openai_compatible'
+  }
+}
+
+function selectModel(value: string) {
+  if (value === 'mrt' || value === 'fubon' || value === 'evaair') {
+    selectTarget(value)
+  } else if (value === 'openai') {
+    target.value = 'openai_compatible'
+    form.provider = 'openai_compatible'
+  }
+}
 
 watch(
   () => props.modelValue,
-  value => Object.assign(form, value),
+  value => {
+    Object.assign(form, value)
+    target.value = targetName(value)
+  },
 )
 </script>
 

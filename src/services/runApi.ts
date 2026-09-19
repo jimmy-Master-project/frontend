@@ -30,9 +30,21 @@ export const runApi = {
 			.post<BackendRunStatus>(`/evaluations/${evaluationId}/runs/`, {})
 			.then((res) => normalizeRunStatus(res.data));
 	},
+	resumeRun(evaluationId: string, runId: string) {
+		return api
+			.post<BackendRunStatus>(`/evaluations/${evaluationId}/runs/`, {
+				resume_run_id: Number(runId),
+			})
+			.then((res) => normalizeRunStatus(res.data));
+	},
 	fetchRunStatus(runId: string) {
 		return api
 			.get<BackendRunStatus>(`/runs/${runId}/status/`)
+			.then((res) => normalizeRunStatus(res.data));
+	},
+	fetchLatestRun(evaluationId: string) {
+		return api
+			.get<BackendRunStatus>(`/evaluations/${evaluationId}/runs/latest/`)
 			.then((res) => normalizeRunStatus(res.data));
 	},
 };

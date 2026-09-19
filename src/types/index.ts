@@ -4,7 +4,7 @@ export type TaskType =
 	| "recommendation"
  	| "other";
 
-export type EvaluationLanguage = "en" | "zh-TW" | "auto";
+export type EvaluationLanguage = "en" | "auto";
 
 export const TASK_TYPE_OPTIONS: Array<{ label: string; value: TaskType }> = [
 	{ label: "Text Generation", value: "text_generation" },
@@ -49,10 +49,15 @@ export interface Evaluation {
 	taskType: TaskType;
 	language: EvaluationLanguage;
 	classificationLabels?: ClassificationLabel[];
-	recommendationItems?: RecommendationItem[];
+  recommendationItems?: RecommendationItem[];
+  taskObjectives?: TaskObjective[];
 	status: EvaluationStatus;
 	promptCount: number;
 	createdAt: string;
+}
+
+export interface TaskObjective {
+	 objective: string;
 }
 
 export interface PersonaAttribute {

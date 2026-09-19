@@ -21,8 +21,9 @@
         title="Error"
         :description="error ?? 'Unable to connect to target LLM.'"
       />
-      <div class="actions">
-        <el-button @click="$emit('retry')">Retry</el-button>
+       <div class="actions">
+         <el-button type="primary" @click="$emit('resume')">Resume from checkpoint</el-button>
+         <el-button @click="$emit('retry')">Start new run</el-button>
         <el-button @click="$emit('back-to-llm')">Back to LLM Configuration</el-button>
       </div>
     </template>
@@ -54,6 +55,7 @@ defineProps<{
 
 defineEmits<{
   retry: []
+  resume: []
   'back-to-llm': []
   'view-responses': []
 }>()

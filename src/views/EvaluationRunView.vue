@@ -20,8 +20,9 @@
       :total-generations="runStore.totalGenerations"
       :completed-generations="runStore.completedGenerations"
       :progress="runStore.progress"
-      :error="runStore.error"
-      @retry="handleStart"
+       :error="runStore.error"
+       @retry="handleStart"
+       @resume="handleResume"
       @back-to-llm="router.push(`/evaluations/${evaluationId}/llm`)"
       @view-responses="router.push(`/evaluations/${evaluationId}/responses`)"
     />
@@ -71,6 +72,7 @@ onMounted(async () => {
   }
   await promptStore.fetchPrompts(evaluationId.value)
   await llmStore.fetchConfig(evaluationId.value).catch(() => {})
+  await runStore.restoreLatestRun(evaluationId.value)
 })
 
 onUnmounted(() => {
@@ -84,5 +86,13 @@ async function handleStart() {
   } catch {
     // Failure state is already reflected via runStore.status/error.
   }
+}
+
+async function handleResume() {
+	try {
+		await runStore.resumeRun(evaluationId.value)
+	} catch {
+		// Failure state is already reflected via runStore.status/error.
+	}
 }
 </script>

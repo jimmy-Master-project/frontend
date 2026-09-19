@@ -2,7 +2,7 @@
 
 interface ImportMetaEnv {
 	readonly VITE_API_BASE_URL: string;
-	readonly VITE_LANGFAIR_DEFAULT_LANGUAGE?: "en" | "zh-TW" | "auto";
+	readonly VITE_LANGFAIR_DEFAULT_LANGUAGE?: "en" | "auto";
 }
 
 interface ImportMeta {

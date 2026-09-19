@@ -61,6 +61,21 @@ export const useRunStore = defineStore("run", () => {
 		}
 	}
 
+	async function resumeRun(nextEvaluationId: string) {
+		if (!runId.value) throw new Error("No failed run to resume.");
+		error.value = null;
+		status.value = "running";
+		try {
+			const result = await runApi.resumeRun(nextEvaluationId, runId.value);
+			applyStatus(result);
+			if (result.runId) startPolling(result.runId);
+			return result;
+		} catch (e) {
+			status.value = "failed";
+			throw e;
+		}
+	}
+
 	async function fetchRunStatus(runIdToFetch: string) {
 		const result = await runApi.fetchRunStatus(runIdToFetch);
 		applyStatus(result);
@@ -70,10 +85,28 @@ export const useRunStore = defineStore("run", () => {
 		return result;
 	}
 
+	async function restoreLatestRun(nextEvaluationId: string) {
+		try {
+			const result = await runApi.fetchLatestRun(nextEvaluationId);
+			ensureEvaluation(nextEvaluationId);
+			applyStatus(result);
+			if (result.status === "running" && result.runId) {
+				startPolling(result.runId);
+			}
+			return result;
+		} catch {
+			return null;
+		}
+	}
+
 	function startPolling(runIdToFetch: string) {
 		stopPolling();
 		pollTimer = setInterval(() => {
-			fetchRunStatus(runIdToFetch).catch(() => stopPolling());
+			fetchRunStatus(runIdToFetch).catch((e) => {
+				status.value = "failed";
+				error.value = e instanceof Error ? e.message : "Unable to fetch run status.";
+				stopPolling();
+			});
 		}, 2000);
 	}
 
@@ -108,7 +141,9 @@ export const useRunStore = defineStore("run", () => {
 		error,
 		ensureEvaluation,
 		startRun,
+		resumeRun,
 		fetchRunStatus,
+		restoreLatestRun,
 		startPolling,
 		stopPolling,
 		reset,

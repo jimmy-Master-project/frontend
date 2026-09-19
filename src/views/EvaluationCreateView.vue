@@ -28,6 +28,7 @@ async function handleSubmit(payload: {
   language: EvaluationLanguage
   classificationLabels?: ClassificationLabel[]
   recommendationItems?: RecommendationItem[]
+  taskFile?: File
 }) {
   try {
     promptStore.reset()
