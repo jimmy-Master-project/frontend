@@ -97,7 +97,8 @@ function normalize(config: LLMConfig): LLMConfig {
     return { ...config, provider: 'openai' }
   }
   if (PROVIDER_OPTIONS.some(option => option.value === config.provider)) return { ...config }
-  return { ...config, provider: 'openai', baseUrl: defaultBaseUrl('openai') }
+  // The model name belonged to the removed provider (e.g. a chatbot id), so drop it too.
+  return { ...config, provider: 'openai', baseUrl: defaultBaseUrl('openai'), modelName: '' }
 }
 
 function selectProvider(provider: Provider) {
