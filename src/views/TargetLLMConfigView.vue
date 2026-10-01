@@ -31,14 +31,17 @@ import { useRoute, useRouter } from 'vue-router'
 import EvaluationStepper from '@/components/common/EvaluationStepper.vue'
 import LoadingState from '@/components/common/LoadingState.vue'
 import TargetLLMConfigForm from '@/components/llm/TargetLLMConfigForm.vue'
+import { formatApiError } from '@/services/api'
 import { useLlmConfigStore } from '@/stores/llmConfig'
 import type { LLMConfig } from '@/types'
 
 const route = useRoute()
 const router = useRouter()
-const evaluationId = computed(() => route.params.evaluationId as string)
+const evaluationId = computed(() => String(route.params.evaluationId))
 
 const llmStore = useLlmConfigStore()
+// Drop form values left over from another evaluation before rendering.
+llmStore.ensureEvaluation(evaluationId.value)
 const loading = ref(true)
 
 const configValues = computed<LLMConfig>(() => ({
@@ -74,8 +77,8 @@ async function handleSave(config: LLMConfig) {
   try {
     await llmStore.saveConfig(evaluationId.value)
     ElMessage.success('Configuration saved.')
-  } catch {
-    ElMessage.error('Failed to save LLM configuration.')
+  } catch (e) {
+    ElMessage.error(formatApiError(e, 'Failed to save LLM configuration.'))
   }
 }
 

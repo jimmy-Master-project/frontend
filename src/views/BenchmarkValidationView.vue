@@ -46,8 +46,8 @@
     <el-alert v-if="error" class="state-alert" type="error" :title="error" show-icon :closable="false" />
     <el-card v-if="result" shadow="never" class="result-card">
       <h3>Validation started</h3>
-      <p>{{ result.pair_count }} pairs / {{ result.prompt_count }} prompts</p>
-      <el-button type="primary" @click="router.push(`/evaluations/${result.evaluation_id}/run`)">
+      <p>{{ result.pairCount }} pairs / {{ result.promptCount }} prompts</p>
+      <el-button type="primary" @click="router.push(`/evaluations/${result.evaluationId}/run`)">
         Open Run Progress
       </el-button>
     </el-card>
@@ -58,6 +58,7 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 
+import { formatApiError } from '@/services/api'
 import { benchmarkApi, type DialogSumValidationResponse } from '@/services/benchmarkApi'
 
 const router = useRouter()
@@ -71,9 +72,9 @@ async function runValidation() {
   loading.value = true
   error.value = null
   try {
-    result.value = await benchmarkApi.runDialogSum({ domain: 'gender', pair_count: pairCount.value, seed: seed.value })
-  } catch (err: any) {
-    error.value = err?.response?.data?.error || 'Unable to start DialogSum validation.'
+    result.value = await benchmarkApi.runDialogSum({ domain: 'gender', pairCount: pairCount.value, seed: seed.value })
+  } catch (err) {
+    error.value = formatApiError(err, 'Unable to start DialogSum validation.')
   } finally {
     loading.value = false
   }

@@ -19,6 +19,7 @@
         :population="promptStore.population"
         :prompt-count="promptStore.promptCount"
         :error="promptStore.error"
+        :connection-lost="promptStore.connectionLost"
         @generate="handleGenerate"
         @regenerate="handleRegenerate"
       />
@@ -28,6 +29,7 @@
         :prompts="promptStore.prompts"
         :category-stats="promptStore.categoryStats"
         :population="promptStore.population"
+        :locked="generating"
         @add="addDialogVisible = true"
         @view="openDetail"
         @edit="openEdit"
@@ -37,8 +39,8 @@
         <el-button @click="router.push('/')">Back</el-button>
         <el-button
           type="primary"
-          :disabled="promptStore.promptCount === 0"
-          @click="router.push(`/evaluations/${evaluationId}/llm`)"
+          :disabled="promptStore.promptCount === 0 || generating"
+          @click="goToTargetLlm"
         >
           Configure Target LLM →
         </el-button>
@@ -62,6 +64,7 @@
     <PromptDetailDialog
       v-model="detailDialogVisible"
       :prompt="selectedPrompt"
+      :locked="generating"
       @edit="promptToEditFromDetail"
       @delete="promptToDeleteFromDetail"
     />
@@ -81,6 +84,7 @@
       message="This action cannot be undone."
       confirm-text="Delete"
       danger
+      :loading="promptSaving"
       @confirm="handleDeletePrompt"
     />
   </div>
@@ -88,7 +92,7 @@
 
 <script setup lang="ts">
 import { ElMessage } from 'element-plus'
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
@@ -102,50 +106,59 @@ import PromptAgentConfig from '@/components/prompts/PromptAgentConfig.vue'
 import PromptDetailDialog from '@/components/prompts/PromptDetailDialog.vue'
 import PromptEditDialog from '@/components/prompts/PromptEditDialog.vue'
 import PromptPopulationTable from '@/components/prompts/PromptPopulationTable.vue'
+import { useUnmountSignal } from '@/composables/usePolling'
+import { formatApiError } from '@/services/api'
 import { useEvaluationStore } from '@/stores/evaluation'
 import { usePromptPopulationStore } from '@/stores/promptPopulation'
 import type { EvaluationLanguage, Prompt, PromptGenerationConfig, RegenerateMode, TaskType } from '@/types'
 
 const route = useRoute()
 const router = useRouter()
-const evaluationId = computed(() => route.params.evaluationId as string)
+const evaluationId = computed(() => String(route.params.evaluationId))
+const unmountSignal = useUnmountSignal()
 
 const evaluationStore = useEvaluationStore()
 const promptStore = usePromptPopulationStore()
+const generating = computed(() => promptStore.isGenerating)
 
 const initialLoading = ref(true)
 const loadError = ref<string | null>(null)
 
 const agentConfig = reactive<PromptGenerationConfig>({
   provider: 'openai_compatible',
-  model: '',
+  modelName: '',
   promptCount: 20,
   temperature: 0.8,
-  additionalInstructions: '',
+  additionalInstruction: '',
 })
 
 async function loadAll() {
+  const id = evaluationId.value
   initialLoading.value = true
   loadError.value = null
   try {
-    promptStore.reset()
-    await evaluationStore.fetchEvaluation(evaluationId.value)
+    // Resets the store only when switching to another evaluation, so a
+    // generation that is still running for this one can be resumed.
+    promptStore.ensureEvaluation(id)
+    await evaluationStore.fetchEvaluation(id)
     await Promise.all([
-      promptStore.fetchPopulation(evaluationId.value),
-      promptStore.fetchPrompts(evaluationId.value),
+      promptStore.fetchPopulation(id),
+      promptStore.fetchPrompts(id),
     ])
-  } catch {
-    loadError.value = 'Failed to load evaluation.'
+    if (!unmountSignal.aborted) promptStore.resumeTracking(id, unmountSignal)
+  } catch (e) {
+    loadError.value = formatApiError(e, 'Failed to load evaluation.')
   } finally {
     initialLoading.value = false
   }
 }
 
 onMounted(loadAll)
+onUnmounted(() => promptStore.stopPolling())
 
 async function handleGenerate(config: PromptGenerationConfig) {
   try {
-    await promptStore.generatePopulation(evaluationId.value, config)
+    await promptStore.generatePopulation(evaluationId.value, config, unmountSignal)
   } catch {
     ElMessage.error(promptStore.error || 'Prompt generation failed.')
   }
@@ -153,18 +166,27 @@ async function handleGenerate(config: PromptGenerationConfig) {
 
 async function handleRegenerate(mode: RegenerateMode, config: PromptGenerationConfig) {
   try {
-    await promptStore.regenerate(evaluationId.value, mode, config)
+    await promptStore.regenerate(evaluationId.value, mode, config, unmountSignal)
   } catch {
     ElMessage.error(promptStore.error || 'Prompt regeneration failed.')
   }
 }
 
+function goToTargetLlm() {
+  if (generating.value) return
+  router.push(`/evaluations/${evaluationId.value}/llm`)
+}
+
 const editDialogVisible = ref(false)
 
 async function handleEditUseCase(payload: { name: string; useCaseDescription: string; taskType: TaskType; language: EvaluationLanguage }) {
-  await evaluationStore.updateEvaluation(payload)
-  editDialogVisible.value = false
-  ElMessage.success('Use case updated.')
+  try {
+    await evaluationStore.updateEvaluation(payload)
+    editDialogVisible.value = false
+    ElMessage.success('Use case updated.')
+  } catch (e) {
+    ElMessage.error(formatApiError(e, 'Failed to update use case.'))
+  }
 }
 
 const selectedPrompt = ref<Prompt | null>(null)
@@ -180,6 +202,7 @@ function openDetail(prompt: Prompt) {
 }
 
 function openEdit(prompt: Prompt) {
+  if (generating.value) return
   selectedPrompt.value = prompt
   editPromptDialogVisible.value = true
 }
@@ -190,46 +213,50 @@ function promptToEditFromDetail(prompt: Prompt) {
 }
 
 function promptToDeleteFromDetail(prompt: Prompt) {
+  if (generating.value) return
   detailDialogVisible.value = false
   selectedPrompt.value = prompt
   deletePromptDialogVisible.value = true
 }
 
-async function handleSavePrompt(payload: { prompt: string; category: string }) {
+async function handleSavePrompt(payload: { text: string; category: string }) {
   if (!selectedPrompt.value) return
   promptSaving.value = true
   try {
     await promptStore.updatePrompt(evaluationId.value, selectedPrompt.value.id, payload)
     editPromptDialogVisible.value = false
     ElMessage.success('Prompt updated.')
-  } catch {
-    ElMessage.error('Failed to update prompt.')
+  } catch (e) {
+    ElMessage.error(formatApiError(e, 'Failed to update prompt.'))
   } finally {
     promptSaving.value = false
   }
 }
 
-async function handleAddPrompt(payload: { prompt: string; category: string }) {
+async function handleAddPrompt(payload: { text: string; category: string }) {
   promptSaving.value = true
   try {
     await promptStore.addPrompt(evaluationId.value, payload)
     addDialogVisible.value = false
     ElMessage.success('Prompt added.')
-  } catch {
-    ElMessage.error('Failed to add prompt.')
+  } catch (e) {
+    ElMessage.error(formatApiError(e, 'Failed to add prompt.'))
   } finally {
     promptSaving.value = false
   }
 }
 
 async function handleDeletePrompt() {
-  if (!selectedPrompt.value) return
+  if (!selectedPrompt.value || promptSaving.value) return
+  promptSaving.value = true
   try {
     await promptStore.deletePrompt(evaluationId.value, selectedPrompt.value.id)
     deletePromptDialogVisible.value = false
     ElMessage.success('Prompt deleted.')
-  } catch {
-    ElMessage.error('Failed to delete prompt.')
+  } catch (e) {
+    ElMessage.error(formatApiError(e, 'Failed to delete prompt.'))
+  } finally {
+    promptSaving.value = false
   }
 }
 </script>

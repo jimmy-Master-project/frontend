@@ -21,7 +21,9 @@
       <span class="label">Total LLM Outputs / Classifier Calls</span>
       <span class="value">{{ totalGenerations }}</span>
     </div>
-    <el-button type="primary" size="large" @click="$emit('start')">Run Evaluation</el-button>
+    <el-button type="primary" size="large" :loading="starting" :disabled="starting" @click="$emit('start')">
+      Run Evaluation
+    </el-button>
   </el-card>
 </template>
 
@@ -33,6 +35,7 @@ const props = defineProps<{
   promptCount: number
   modelName: string
   generationsPerPrompt: number
+  starting?: boolean
 }>()
 
 defineEmits<{ start: [] }>()

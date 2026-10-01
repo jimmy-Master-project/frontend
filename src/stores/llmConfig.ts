@@ -1,18 +1,30 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 
+import { formatApiError } from '@/services/api'
 import { llmConfigApi, type TestConnectionResult } from '@/services/llmConfigApi'
 import type { LLMConfig, Provider } from '@/types'
 
+const DEFAULT_CONFIG: LLMConfig = {
+  provider: 'openai_compatible',
+  modelName: '',
+  baseUrl: '',
+  temperature: 0.7,
+  topP: 0.9,
+  maxTokens: 512,
+  generationsPerPrompt: 1,
+}
+
 export const useLlmConfigStore = defineStore('llmConfig', () => {
-  const provider = ref<Provider>('openai_compatible')
-  const modelName = ref('')
-  const baseUrl = ref('')
+  const currentEvaluationId = ref<string | null>(null)
+  const provider = ref<Provider>(DEFAULT_CONFIG.provider)
+  const modelName = ref(DEFAULT_CONFIG.modelName)
+  const baseUrl = ref(DEFAULT_CONFIG.baseUrl)
   const apiKey = ref('')
-  const temperature = ref(0.7)
-  const topP = ref(0.9)
-  const maxTokens = ref(512)
-  const generationsPerPrompt = ref(1)
+  const temperature = ref(DEFAULT_CONFIG.temperature)
+  const topP = ref(DEFAULT_CONFIG.topP)
+  const maxTokens = ref(DEFAULT_CONFIG.maxTokens)
+  const generationsPerPrompt = ref(DEFAULT_CONFIG.generationsPerPrompt)
 
   const loading = ref(false)
   const saving = ref(false)
@@ -43,50 +55,87 @@ export const useLlmConfigStore = defineStore('llmConfig', () => {
     }
   }
 
-  async function fetchConfig(evaluationId: string) {
+  function isCurrent(evaluationId: string) {
+    return currentEvaluationId.value === evaluationId
+  }
+
+  /**
+   * Binds the store to an evaluation. Switching evaluation resets the form to
+   * defaults, so a failed fetch never leaves another evaluation's values.
+   */
+  function ensureEvaluation(evaluationId: string | number) {
+    const id = String(evaluationId)
+    if (currentEvaluationId.value !== id) {
+      reset()
+      currentEvaluationId.value = id
+    }
+    return id
+  }
+
+  async function fetchConfig(evaluationId: string | number) {
+    const id = ensureEvaluation(evaluationId)
     loading.value = true
     error.value = null
     try {
-      const config = await llmConfigApi.fetchConfig(evaluationId)
+      const config = await llmConfigApi.fetchConfig(id)
+      if (!isCurrent(id)) return
       applyConfig(config)
     } catch (e) {
-      error.value = 'Failed to load LLM configuration.'
+      if (isCurrent(id)) error.value = formatApiError(e, 'Failed to load LLM configuration.')
       throw e
     } finally {
-      loading.value = false
+      if (isCurrent(id)) loading.value = false
     }
   }
 
-  async function saveConfig(evaluationId: string) {
+  async function saveConfig(evaluationId: string | number) {
+    const id = ensureEvaluation(evaluationId)
     saving.value = true
     error.value = null
     try {
-      const config = await llmConfigApi.saveConfig(evaluationId, toPayload())
+      const config = await llmConfigApi.saveConfig(id, toPayload())
+      if (!isCurrent(id)) return config
       applyConfig(config)
       apiKey.value = ''
       return config
     } catch (e) {
-      error.value = 'Failed to save LLM configuration.'
+      if (isCurrent(id)) error.value = formatApiError(e, 'Failed to save LLM configuration.')
       throw e
     } finally {
-      saving.value = false
+      if (isCurrent(id)) saving.value = false
     }
   }
 
-  async function testConnection(evaluationId: string) {
+  async function testConnection(evaluationId: string | number) {
+    const id = ensureEvaluation(evaluationId)
     testing.value = true
     testResult.value = null
+    let result: TestConnectionResult
     try {
-      testResult.value = await llmConfigApi.testConnection(evaluationId)
-    } catch {
-      testResult.value = { success: false, message: 'Unable to connect to model endpoint.' }
-    } finally {
+      result = await llmConfigApi.testConnection(id)
+    } catch (e) {
+      result = { success: false, message: formatApiError(e, 'Unable to connect to model endpoint.') }
+    }
+    if (isCurrent(id)) {
+      testResult.value = result
       testing.value = false
     }
-    return testResult.value
+    return result
+  }
+
+  function reset() {
+    currentEvaluationId.value = null
+    applyConfig(DEFAULT_CONFIG)
+    apiKey.value = ''
+    loading.value = false
+    saving.value = false
+    testing.value = false
+    error.value = null
+    testResult.value = null
   }
 
   return {
+    currentEvaluationId,
     provider,
     modelName,
     baseUrl,
@@ -100,8 +149,10 @@ export const useLlmConfigStore = defineStore('llmConfig', () => {
     testing,
     error,
     testResult,
+    ensureEvaluation,
     fetchConfig,
     saveConfig,
     testConnection,
+    reset,
   }
 })

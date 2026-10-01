@@ -43,6 +43,21 @@ const router = createRouter({
       component: () => import("../views/FairnessMetricsView.vue"),
       props: true,
     },
+    // Visual workflow editor (merged from frontend-node-v). Lazy-loaded so
+    // @vue-flow/core stays out of the main chunk.
+    {
+      path: "/flow",
+      name: "flow-editor-home",
+      component: () => import("../views/FlowEditorView.vue"),
+      meta: { fullWidth: true },
+    },
+    {
+      path: "/evaluations/:evaluationId/flow",
+      name: "flow-editor",
+      component: () => import("../views/FlowEditorView.vue"),
+      props: true,
+      meta: { fullWidth: true },
+    },
     {
       path: "/benchmark-validation",
       name: "benchmark-validation",

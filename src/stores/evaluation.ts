@@ -32,7 +32,7 @@ export const useEvaluationStore = defineStore("evaluation", () => {
   const error = ref<string | null>(null);
 
   function setFromEvaluation(evaluation: Evaluation) {
-    evaluationId.value = evaluation.id;
+    evaluationId.value = String(evaluation.id);
     name.value = evaluation.name;
     useCaseDescription.value = evaluation.useCaseDescription;
     taskType.value = evaluation.taskType;
@@ -71,11 +71,11 @@ export const useEvaluationStore = defineStore("evaluation", () => {
     }
   }
 
-  async function fetchEvaluation(id: string) {
+  async function fetchEvaluation(id: string | number) {
     loading.value = true;
     error.value = null;
     try {
-      const evaluation = await evaluationApi.get(id);
+      const evaluation = await evaluationApi.get(String(id));
       setFromEvaluation(evaluation);
       return evaluation;
     } catch (e) {
@@ -105,11 +105,13 @@ export const useEvaluationStore = defineStore("evaluation", () => {
     }
   }
 
-  async function deleteEvaluation(id: string) {
-    await evaluationApi.remove(id);
+  async function deleteEvaluation(id: string | number) {
+    const target = String(id);
+    await evaluationApi.remove(target);
     evaluations.value = evaluations.value.filter(
-      (evaluation) => evaluation.id !== id,
+      (evaluation) => String(evaluation.id) !== target,
     );
+    if (evaluationId.value === target) reset();
   }
 
   function reset() {

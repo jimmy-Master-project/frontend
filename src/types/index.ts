@@ -4,6 +4,7 @@ export type TaskType =
 	| "recommendation"
  	| "other";
 
+/** Matches backend Evaluation.Language choices. */
 export type EvaluationLanguage = "en" | "auto";
 
 export const TASK_TYPE_OPTIONS: Array<{ label: string; value: TaskType }> = [
@@ -60,87 +61,121 @@ export interface TaskObjective {
 	 objective: string;
 }
 
+/** GET /persona/attributes item (normalized from the MatrAIx catalog by the backend). */
 export interface PersonaAttribute {
 	key: string;
 	label?: string;
 	category?: string;
 	description?: string;
 	values?: string[];
-	allowedValues?: string[];
-	type?: string;
-	freeText?: boolean;
 }
 
 export interface PersonaCatalog {
-	attributes: PersonaAttribute[];
 	pool?: string;
-	sampleSizeMin?: number;
-	sampleSizeMax?: number;
-	previewSizeMax?: number;
+	attributes: PersonaAttribute[];
 }
 
 export interface PersonaPreview {
-	persona_id: string;
+	personaId: string;
+	/** Keyed by MatrAIx dimension name (data keys, not camelCased). */
 	attributes: Record<string, string>;
-	missing_attributes: string[];
+	missingAttributes: string[];
 }
 
 export interface PersonaConfig {
 	enabled: boolean;
 	pool?: string;
-	selected_attributes: string[];
+	selectedAttributes: string[];
+	/** Keyed by persona attribute name (data keys, not camelCased). */
 	filters: Record<string, string[]>;
 	stratify: string | null;
-	seed: number;
-	counterfactual_enabled?: boolean;
+	/** `null` means "random": a fresh seed is drawn when generating/previewing. */
+	seed: number | null;
+	counterfactualEnabled?: boolean;
 }
 
+/** Persona config as stored on a generated population (summary endpoint). */
+export interface PopulationPersonaConfig extends PersonaConfig {
+	uniquePersonaCount?: number | null;
+	reusedPersonas?: boolean;
+}
+
+/** POST /evaluations/{id}/prompt-population/generate body. */
 export interface PromptGenerationConfig {
 	provider: Provider;
-	model: string;
+	modelName: string;
 	promptCount: number;
 	temperature: number;
-	additionalInstructions?: string;
+	additionalInstruction?: string;
 	persona?: PersonaConfig;
 }
 
 export interface PromptFairnessMetadata {
 	task?: string;
 	attribute?: string;
+	sourceAttribute?: string;
 	group?: string;
-	pair_id?: string;
+	pairId?: string;
 	role?: "original" | "counterfactual" | string;
-	source_persona_id?: string;
+	sourcePersonaId?: string;
+	objectiveIndex?: number;
 }
 
 export interface Prompt {
 	id: string;
 	index: number;
-	prompt: string;
+	text: string;
 	category: string;
-	persona_id?: string | null;
-	persona_attributes?: Record<string, string>;
-	missing_attributes?: string[];
+	personaId?: string | null;
+	/** Keyed by persona attribute name (data keys, not camelCased). */
+	personaAttributes?: Record<string, string>;
+	missingAttributes?: string[];
 	fairness?: PromptFairnessMetadata;
 }
 
 export type RegenerateMode = "replace" | "additional";
 
+/** GET /evaluations/{id}/prompt-population: the population whose prompts are listed. */
 export interface PromptPopulationSummary {
+	populationId: number | null;
+	status: PopulationStatus | null;
+	errorMessage: string;
 	generationModel: string;
+	provider: string;
 	temperature: number;
 	requested: number;
 	generated: number;
-	personaBased?: boolean;
-	persona?: PersonaConfig | null;
-	personaAttributes?: string[];
-	stratifiedBy?: string | null;
-	seed?: number | null;
-	subgroupCounts?: Record<string, Record<string, number>>;
-	fairness?: Record<string, unknown>;
+	personaBased: boolean;
+	persona: PopulationPersonaConfig | null;
+	personaAttributes: string[];
+	stratifiedBy: string | null;
+	seed: number | null;
+	fairness: Record<string, unknown>;
+	/** Newest population still generating (possibly newer than `populationId`). */
+	generatingPopulationId: number | null;
 }
 
-export type GenerationStatus = "idle" | "generating" | "completed" | "failed";
+/** GET /prompt-populations/{id} (also the 202 body of the generate endpoint). */
+export interface PromptPopulation {
+	id: number;
+	evaluationId: number;
+	name: string;
+	provider: string;
+	modelName: string;
+	temperature: number;
+	requestedPromptCount: number;
+	actualPromptCount: number;
+	additionalInstruction: string;
+	/** Raw internal JSON blob (snake_case keys). */
+	metadata: Record<string, unknown>;
+	status: PopulationStatus;
+	errorMessage: string;
+	createdAt: string;
+}
+
+export type PopulationStatus = "pending" | "generating" | "completed" | "failed";
+
+export type GenerationStatus = "idle" | PopulationStatus;
 
 export interface LLMConfig {
 	provider: Provider;
@@ -153,23 +188,24 @@ export interface LLMConfig {
 	generationsPerPrompt: number;
 }
 
-export type RunState = "idle" | "running" | "completed" | "failed";
+export type RunState = "idle" | "pending" | "running" | "completed" | "failed";
 
+/** GET /runs/{id}/status (also the 201 body of POST /evaluations/{id}/runs). */
 export interface RunStatus {
-	runId: string | null;
-	status: RunState;
+	id: number;
+	status: Exclude<RunState, "idle">;
 	totalPrompts: number;
 	completedPrompts: number;
 	totalGenerations: number;
 	completedGenerations: number;
-	error: string | null;
-}
-
-export interface ClassificationOutput {
-	model: string;
-	predictions: Record<string, number>;
-	latencyMs: number;
-	error: string | null;
+	/** 0..1 */
+	progress: number;
+	errorMessage: string;
+	heartbeatAt: string | null;
+	/** Generations that failed after retries (completedGenerations counts successes only). */
+	failedGenerations: number;
+	/** Run created outside the normal flow (e.g. benchmark); cannot be resumed. */
+	external: boolean;
 }
 
 export interface LangFairMetricsResult {
@@ -179,7 +215,19 @@ export interface LangFairMetricsResult {
 	selectedSuites?: string[];
 	taskType?: TaskType | string;
 	suites: Record<string, unknown>;
+	/** Status of the async metric computation. */
+	status?: LangFairComputationStatus;
+	/** Status of the run the metrics were computed from. */
+	runStatus?: RunState | string;
+	/** True when computed from a run that has not completed all generations. */
+	partial?: boolean;
+	error?: string;
+	computedAt?: string;
+	excludedResponseCount?: number;
+	language?: string;
 }
+
+export type LangFairComputationStatus = "none" | "running" | "completed" | "failed";
 
 export interface ResponseItem {
 	id: string;
@@ -193,26 +241,8 @@ export interface ResponseItem {
 	inputTokens: number;
 	outputTokens: number;
 	latencyMs: number;
-	classifications: Record<string, ClassificationOutput>;
-}
-
-export interface ClassificationLabelSummary {
-	average: number;
-	max: number;
-	flaggedCount: number;
-}
-
-export interface ClassifierSummary {
-	model: string;
-	total: number;
-	failed: number;
-	highRiskCount: number;
-	labels: Record<string, ClassificationLabelSummary>;
-}
-
-export interface ClassificationSummary {
-	threshold: number;
-	classifiers: Record<string, ClassifierSummary>;
+	/** Set when generation failed after retries (response is empty). */
+	error?: string | null;
 }
 
 export interface ResponseFilters {

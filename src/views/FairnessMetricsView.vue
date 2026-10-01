@@ -16,6 +16,10 @@
       :metrics="responsesStore.langFairMetrics"
       :loading="responsesStore.langFairLoading"
       :error="responsesStore.langFairError"
+      :status="responsesStore.langFairStatus"
+      :partial="responsesStore.langFairPartial"
+      :run-status="responsesStore.langFairRunStatus"
+      :connection-lost="responsesStore.langFairConnectionLost"
       :run-id="responsesStore.runId"
       :task-type="responsesStore.taskType"
       :classification-labels="responsesStore.classificationLabels"
@@ -25,33 +29,46 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import EvaluationStepper from '@/components/common/EvaluationStepper.vue'
 import ErrorState from '@/components/common/ErrorState.vue'
 import LoadingState from '@/components/common/LoadingState.vue'
 import EvaluationResultSummary from '@/components/responses/EvaluationResultSummary.vue'
+import { useUnmountSignal } from '@/composables/usePolling'
 import { useResponsesStore } from '@/stores/responses'
+import { defaultClassificationMapping } from '@/utils/langfairMetrics'
 
 const route = useRoute()
 const router = useRouter()
-const evaluationId = computed(() => route.params.evaluationId as string)
+const evaluationId = computed(() => String(route.params.evaluationId))
+const unmountSignal = useUnmountSignal()
 const responsesStore = useResponsesStore()
+responsesStore.enterEvaluation(evaluationId.value)
 
 async function load() {
   try {
-    await responsesStore.fetchResponses(evaluationId.value)
+    await responsesStore.fetchResponses(evaluationId.value, unmountSignal)
   } catch {
     // Store state already contains the user-facing error.
+    return
   }
+  if (unmountSignal.aborted) return
+  // Show an already computed result (or resume polling a running one)
+  // without triggering a new computation.
+  const mapping = responsesStore.taskType === 'classification'
+    ? defaultClassificationMapping(responsesStore.classificationLabels)
+    : undefined
+  await responsesStore.loadCachedLangFairMetrics(mapping, undefined, unmountSignal)
 }
 
 function loadLangFairMetrics(mapping?: { positiveLabels: number[]; negativeLabels: number[] }) {
-  responsesStore.fetchLangFairMetrics(mapping).catch(() => {})
+  responsesStore.fetchLangFairMetrics(mapping, undefined, unmountSignal).catch(() => {})
 }
 
 onMounted(load)
+onUnmounted(() => responsesStore.stopLangFairPolling())
 </script>
 
 <style scoped>

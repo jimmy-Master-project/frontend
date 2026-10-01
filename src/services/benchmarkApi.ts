@@ -2,15 +2,15 @@ import api from './api'
 
 export interface DialogSumValidationRequest {
   domain: 'gender'
-  pair_count: number
+  pairCount: number
   seed: number
 }
 
 export interface DialogSumValidationResponse {
-  evaluation_id: number
-  run_id: number
-  pair_count: number
-  prompt_count: number
+  evaluationId: number
+  runId: number
+  pairCount: number
+  promptCount: number
   status: string
 }
 

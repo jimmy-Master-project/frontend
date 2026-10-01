@@ -5,28 +5,28 @@
         <span class="label">Category</span>
         <el-tag>{{ prompt.category || 'Other' }}</el-tag>
       </div>
-      <div v-if="prompt.persona_id" class="detail-field">
+      <div v-if="prompt.personaId" class="detail-field">
         <span class="label">Persona</span>
-        <strong>{{ prompt.persona_id }}</strong>
-        <dl v-if="Object.keys(prompt.persona_attributes || {}).length">
-          <template v-for="[key, value] in Object.entries(prompt.persona_attributes || {})" :key="key">
+        <strong>{{ prompt.personaId }}</strong>
+        <dl v-if="Object.keys(prompt.personaAttributes || {}).length">
+          <template v-for="[key, value] in Object.entries(prompt.personaAttributes || {})" :key="key">
             <dt>{{ key }}</dt>
             <dd>{{ value }}</dd>
           </template>
         </dl>
-        <p v-if="prompt.missing_attributes?.length" class="missing">
-          Missing: {{ prompt.missing_attributes.join(', ') }}
+        <p v-if="prompt.missingAttributes?.length" class="missing">
+          Missing: {{ prompt.missingAttributes.join(', ') }}
         </p>
       </div>
       <div class="detail-field">
         <span class="label">Prompt</span>
-        <p class="prompt-text">{{ prompt.prompt }}</p>
+        <p class="prompt-text">{{ prompt.text }}</p>
       </div>
     </template>
     <template #footer>
       <el-button v-if="prompt" @click="copyPrompt(prompt)">Copy prompt</el-button>
-      <el-button type="danger" plain @click="prompt && $emit('delete', prompt)">Delete</el-button>
-      <el-button type="primary" @click="prompt && $emit('edit', prompt)">Edit</el-button>
+      <el-button type="danger" plain :disabled="locked" @click="prompt && $emit('delete', prompt)">Delete</el-button>
+      <el-button type="primary" :disabled="locked" @click="prompt && $emit('edit', prompt)">Edit</el-button>
       <el-button @click="visible = false">Close</el-button>
     </template>
   </el-dialog>
@@ -38,7 +38,7 @@ import { computed } from 'vue'
 
 import type { Prompt } from '@/types'
 
-const props = defineProps<{ modelValue: boolean; prompt: Prompt | null }>()
+const props = defineProps<{ modelValue: boolean; prompt: Prompt | null; locked?: boolean }>()
 const emit = defineEmits<{
   'update:modelValue': [value: boolean]
   edit: [prompt: Prompt]
@@ -51,7 +51,7 @@ const visible = computed({
 })
 
 async function copyPrompt(prompt: Prompt) {
-  await navigator.clipboard.writeText(prompt.prompt)
+  await navigator.clipboard.writeText(prompt.text)
   ElMessage.success('Prompt copied.')
 }
 </script>

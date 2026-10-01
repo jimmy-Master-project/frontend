@@ -2,7 +2,7 @@
   <el-dialog v-model="visible" title="Edit Prompt" width="560px">
     <el-form label-position="top">
       <el-form-item label="Prompt">
-        <el-input v-model="form.prompt" type="textarea" :rows="6" />
+        <el-input v-model="form.text" type="textarea" :rows="6" />
       </el-form-item>
       <el-form-item label="Category">
         <el-input v-model="form.category" />
@@ -23,7 +23,7 @@ import type { Prompt } from '@/types'
 const props = defineProps<{ modelValue: boolean; prompt: Prompt | null; saving?: boolean }>()
 const emit = defineEmits<{
   'update:modelValue': [value: boolean]
-  save: [payload: { prompt: string; category: string }]
+  save: [payload: { text: string; category: string }]
 }>()
 
 const visible = computed({
@@ -31,12 +31,12 @@ const visible = computed({
   set: value => emit('update:modelValue', value),
 })
 
-const form = reactive({ prompt: '', category: '' })
+const form = reactive({ text: '', category: '' })
 
 watch(
   () => props.prompt,
   value => {
-    form.prompt = value?.prompt ?? ''
+    form.text = value?.text ?? ''
     form.category = value?.category ?? ''
   },
   { immediate: true },

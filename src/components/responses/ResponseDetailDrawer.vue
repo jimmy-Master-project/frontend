@@ -8,7 +8,17 @@
       <el-divider />
       <section class="block">
         <h4>Response</h4>
-        <p>{{ item.response }}</p>
+        <el-alert
+          v-if="item.error"
+          type="error"
+          show-icon
+          :closable="false"
+          title="Generation failed after retries"
+          :description="item.error"
+          class="response-error"
+        />
+        <p v-if="item.response">{{ item.response }}</p>
+        <p v-else-if="item.error" class="empty-response">(empty response)</p>
       </section>
       <el-divider />
       <div class="meta-grid">
@@ -39,6 +49,12 @@ const visible = computed({
 </script>
 
 <style scoped>
+.response-error {
+  margin-bottom: 8px;
+}
+.empty-response {
+  color: var(--el-text-color-secondary);
+}
 .block h4 {
   margin: 0 0 8px;
   font-size: 13px;

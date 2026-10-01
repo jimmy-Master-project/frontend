@@ -12,6 +12,7 @@ import { ElMessage } from 'element-plus'
 import { useRouter } from 'vue-router'
 
 import EvaluationForm from '@/components/evaluation/EvaluationForm.vue'
+import { formatApiError } from '@/services/api'
 import { evaluationPath } from '@/services/evaluationApi'
 import { useEvaluationStore } from '@/stores/evaluation'
 import { usePromptPopulationStore } from '@/stores/promptPopulation'
@@ -34,8 +35,8 @@ async function handleSubmit(payload: {
     promptStore.reset()
     const evaluation = await store.createEvaluation(payload)
     router.push(evaluationPath(evaluation))
-  } catch {
-    ElMessage.error('Failed to create evaluation.')
+  } catch (e) {
+    ElMessage.error(formatApiError(e, 'Failed to create evaluation.'))
   }
 }
 </script>

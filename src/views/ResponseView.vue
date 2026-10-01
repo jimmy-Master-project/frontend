@@ -79,6 +79,8 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
+import { useUnmountSignal } from '@/composables/usePolling'
+
 import EvaluationStepper from '@/components/common/EvaluationStepper.vue'
 import ErrorState from '@/components/common/ErrorState.vue'
 import LoadingState from '@/components/common/LoadingState.vue'
@@ -90,13 +92,18 @@ import type { ResponseItem } from '@/types'
 
 const route = useRoute()
 const router = useRouter()
-const evaluationId = computed(() => route.params.evaluationId as string)
+const evaluationId = computed(() => String(route.params.evaluationId))
+const unmountSignal = useUnmountSignal()
 
 const responsesStore = useResponsesStore()
+// Clears responses/filters/page left over from a different evaluation.
+responsesStore.enterEvaluation(evaluationId.value)
 
-const keyword = ref('')
-const categoryFilter = ref<string | null>(null)
-const generationFilter = ref<number | null>(null)
+// Local inputs start from the store so filters kept for this evaluation
+// (e.g. coming back from Fairness Metrics) stay visible and consistent.
+const keyword = ref(responsesStore.filters.keyword)
+const categoryFilter = ref<string | null>(responsesStore.filters.category)
+const generationFilter = ref<number | null>(responsesStore.filters.generationIndex)
 const viewMode = ref<'table' | 'grouped'>('table')
 
 const detailVisible = ref(false)
@@ -113,7 +120,7 @@ const maxGenerationIndex = computed(() => {
 
 async function load() {
   try {
-    await responsesStore.fetchResponses(evaluationId.value)
+    await responsesStore.fetchResponses(evaluationId.value, unmountSignal)
   } catch {
     // Store state already contains the user-facing error.
   }
@@ -122,7 +129,8 @@ async function load() {
 onMounted(load)
 
 function handleSearch() {
-  responsesStore.search(evaluationId.value, keyword.value)
+  responsesStore.setFilter({ keyword: keyword.value })
+  load()
 }
 
 function handleFilterChange() {

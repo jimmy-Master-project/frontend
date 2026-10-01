@@ -13,28 +13,19 @@
         </div>
         <div v-if="population?.personaBased" class="stat-block">
           <span class="stat-label">Attributes</span>
-          <span class="stat-value">{{ population.personaAttributes?.length ?? population.persona?.selected_attributes.length ?? 0 }}</span>
+          <span class="stat-value">{{ population.personaAttributes.length }}</span>
         </div>
         <div v-if="population?.personaBased" class="stat-block">
           <span class="stat-label">Stratified by</span>
-          <span class="stat-value">{{ population.stratifiedBy || population.persona?.stratify || 'None' }}</span>
+          <span class="stat-value">{{ population.stratifiedBy || 'None' }}</span>
         </div>
         <div v-if="population?.personaBased" class="stat-block">
           <span class="stat-label">Seed</span>
-          <span class="stat-value">{{ population.seed ?? population.persona?.seed ?? '—' }}</span>
+          <span class="stat-value">{{ population.seed ?? '—' }}</span>
         </div>
         <div v-if="counterfactualPairs.length" class="stat-block">
           <span class="stat-label">Counterfactual pairs</span>
           <span class="stat-value">{{ counterfactualPairs.length }}</span>
-        </div>
-      </div>
-      <div v-if="subgroupEntries.length" class="subgroup-stats">
-        <div v-for="[group, counts] in subgroupEntries" :key="group" class="subgroup">
-          <span class="subgroup-title">{{ group }}</span>
-          <span v-for="[value, count] in Object.entries(counts)" :key="value" class="category-stat">
-            <span class="category-name">{{ value }}</span>
-            <span class="category-count">{{ count }}</span>
-          </span>
         </div>
       </div>
       <div v-if="categoryEntries.length" class="category-stats">
@@ -52,20 +43,21 @@
         <el-table-column label="Original" min-width="220">
           <template #default="{ row }">
             <el-tag size="small">{{ row.original?.fairness?.group }}</el-tag>
-            <p>{{ truncate(row.original?.prompt || '', 100) }}</p>
+            <p>{{ truncate(row.original?.text || '', 100) }}</p>
           </template>
         </el-table-column>
         <el-table-column label="Counterfactual" min-width="220">
           <template #default="{ row }">
             <el-tag size="small" type="warning">{{ row.counterfactual?.fairness?.group }}</el-tag>
-            <p>{{ truncate(row.counterfactual?.prompt || '', 100) }}</p>
+            <p>{{ truncate(row.counterfactual?.text || '', 100) }}</p>
           </template>
         </el-table-column>
       </el-table>
     </el-card>
 
     <div class="table-toolbar">
-      <el-button @click="$emit('add')">+ Add Prompt</el-button>
+      <span v-if="locked" class="locked-hint">Prompts are locked while the population is generating.</span>
+      <el-button :disabled="locked" @click="$emit('add')">+ Add Prompt</el-button>
     </div>
 
     <el-table
@@ -80,35 +72,35 @@
       <el-table-column type="expand" width="44">
         <template #default="{ row }">
           <div class="expanded-prompt">
-            <div v-if="row.fairness?.pair_id" class="fairness-context">
-              <el-tag size="small">{{ row.fairness.pair_id }}</el-tag>
+            <div v-if="row.fairness?.pairId" class="fairness-context">
+              <el-tag size="small">{{ row.fairness.pairId }}</el-tag>
               <el-tag size="small" type="info">{{ row.fairness.role }}</el-tag>
               <el-tag size="small" type="warning">{{ row.fairness.attribute }}: {{ row.fairness.group }}</el-tag>
             </div>
-            <div v-if="row.persona_id" class="persona-context">
-              <strong>Persona: {{ row.persona_id }}</strong>
+            <div v-if="row.personaId" class="persona-context">
+              <strong>Persona: {{ row.personaId }}</strong>
               <dl>
-                <template v-for="[key, value] in Object.entries(row.persona_attributes || {})" :key="key">
+                <template v-for="[key, value] in Object.entries(row.personaAttributes || {})" :key="key">
                   <dt>{{ key }}</dt>
                   <dd>{{ value }}</dd>
                 </template>
               </dl>
-              <div v-if="row.missing_attributes?.length" class="missing">
-                Missing: {{ row.missing_attributes.join(', ') }}
+              <div v-if="row.missingAttributes?.length" class="missing">
+                Missing: {{ row.missingAttributes.join(', ') }}
               </div>
             </div>
-            <p class="prompt-text">{{ row.prompt }}</p>
+            <p class="prompt-text">{{ row.text }}</p>
           </div>
         </template>
       </el-table-column>
       <el-table-column label="Prompt">
         <template #default="{ row }">
           <div>
-            <el-tag v-if="row.fairness?.pair_id" size="small" type="warning" class="persona-tag">
-              {{ row.fairness.pair_id }} / {{ row.fairness.role }}
+            <el-tag v-if="row.fairness?.pairId" size="small" type="warning" class="persona-tag">
+              {{ row.fairness.pairId }} / {{ row.fairness.role }}
             </el-tag>
-            <el-tag v-if="row.persona_id" size="small" class="persona-tag">Persona: {{ row.persona_id }}</el-tag>
-            <span>{{ truncate(row.prompt) }}</span>
+            <el-tag v-if="row.personaId" size="small" class="persona-tag">Persona: {{ row.personaId }}</el-tag>
+            <span>{{ truncate(row.text) }}</span>
           </div>
         </template>
       </el-table-column>
@@ -120,7 +112,7 @@
       <el-table-column label="Action" width="150">
         <template #default="{ row }">
           <el-button text type="primary" @click.stop="copyPrompt(row as Prompt)">Copy prompt</el-button>
-          <el-button text type="primary" @click.stop="$emit('edit', row as Prompt)">Edit</el-button>
+          <el-button text type="primary" :disabled="locked" @click.stop="$emit('edit', row as Prompt)">Edit</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -137,6 +129,7 @@ const props = defineProps<{
   prompts: Prompt[]
   categoryStats: Record<string, number>
   population: PromptPopulationSummary | null
+  locked?: boolean
 }>()
 
 defineEmits<{
@@ -146,11 +139,10 @@ defineEmits<{
 }>()
 
 const categoryEntries = computed(() => Object.entries(props.categoryStats))
-const subgroupEntries = computed(() => Object.entries(props.population?.subgroupCounts || {}))
 const counterfactualPairs = computed(() => {
   const pairs = new Map<string, { pairId: string; original?: Prompt; counterfactual?: Prompt }>()
   for (const prompt of props.prompts) {
-    const pairId = prompt.fairness?.pair_id
+    const pairId = prompt.fairness?.pairId
     if (!pairId) continue
     const row = pairs.get(pairId) || { pairId }
     if (prompt.fairness?.role === 'counterfactual') row.counterfactual = prompt
@@ -166,12 +158,18 @@ function truncate(text: string, length = 60) {
 }
 
 async function copyPrompt(prompt: Prompt) {
-  await navigator.clipboard.writeText(prompt.prompt)
+  await navigator.clipboard.writeText(prompt.text)
   ElMessage.success('Prompt copied.')
 }
 </script>
 
 <style scoped>
+.locked-hint {
+  align-self: center;
+  margin-right: 12px;
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
+}
 .prompt-population-table {
   margin-bottom: 24px;
 }
@@ -205,19 +203,10 @@ async function copyPrompt(prompt: Prompt) {
   font-size: 20px;
   font-weight: 700;
 }
-.category-stats,
-.subgroup-stats {
-  display: flex;
-  gap: 20px;
-  flex-wrap: wrap;
-}
-.subgroup {
+.category-stats {
   display: flex;
   align-items: baseline;
   gap: 10px;
-}
-.subgroup-title {
-  font-weight: 600;
 }
 .category-stat {
   display: flex;

@@ -3,13 +3,17 @@
     <header class="app-header">
       <router-link to="/" class="brand">LLM Fairness Evaluation Platform</router-link>
     </header>
-    <main class="app-main">
+    <main class="app-main" :class="{ 'app-main--full': route.meta.fullWidth }">
       <router-view />
     </main>
   </div>
 </template>
 
-<script setup lang="ts"></script>
+<script setup lang="ts">
+import { useRoute } from 'vue-router'
+
+const route = useRoute()
+</script>
 
 <style>
 body {
@@ -51,5 +55,10 @@ body {
   margin: 0 auto;
   padding: 32px;
   box-sizing: border-box;
+}
+
+.app-main--full {
+  max-width: none;
+  padding: 0;
 }
 </style>

@@ -4,7 +4,13 @@
       <template #default="{ row }">{{ truncate(row.promptText) }}</template>
     </el-table-column>
     <el-table-column label="Response">
-      <template #default="{ row }">{{ truncate(row.response) }}</template>
+      <template #default="{ row }">
+        <template v-if="row.error">
+          <el-tag size="small" type="danger" class="error-tag">Generation failed</el-tag>
+          <span class="error-text">{{ truncate(row.error) }}</span>
+        </template>
+        <template v-else>{{ truncate(row.response) }}</template>
+      </template>
     </el-table-column>
     <el-table-column label="Generation" width="120" align="right">
       <template #default="{ row }">{{ row.generationIndex }}</template>
@@ -25,6 +31,12 @@ function truncate(text: string, length = 80) {
 </script>
 
 <style scoped>
+.error-tag {
+  margin-right: 6px;
+}
+.error-text {
+  color: var(--el-color-danger);
+}
 :deep(.el-table__row) {
   cursor: pointer;
 }

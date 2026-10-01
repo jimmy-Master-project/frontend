@@ -12,7 +12,7 @@
           </el-select>
         </el-form-item>
         <el-form-item label="Model">
-          <el-input v-model="form.model" placeholder="Leave blank to use backend .env" />
+          <el-input v-model="form.modelName" placeholder="Leave blank to use backend .env" />
         </el-form-item>
         <el-form-item :label="personaEnabled ? 'Population Size' : 'Prompt Count'">
           <el-input-number v-model="form.promptCount" :min="1" :max="1000" style="width: 100%" />
@@ -22,7 +22,7 @@
         </el-form-item>
         <el-form-item label="Additional Instructions (optional)">
           <el-input
-            v-model="form.additionalInstructions"
+            v-model="form.additionalInstruction"
             type="textarea"
             :rows="3"
             placeholder="Generate realistic and diverse prompts. Include different wording styles and different levels of detail."
@@ -36,15 +36,27 @@
         v-model:config="personaConfig"
       />
 
-      <div v-if="generationStatus === 'generating'" class="generating">
+      <div v-if="generationStatusIsGenerating" class="generating">
         <el-icon class="is-loading" :size="24"><Loading /></el-icon>
         <div>
-          <p class="title">Generating Prompt Population...</p>
+          <p class="title">
+            {{ generationStatus === 'pending' ? 'Queued for generation...' : 'Generating Prompt Population...' }}
+          </p>
           <p class="subtitle">
             {{ personaEnabled ? `Generating ${form.promptCount} persona-based prompts...` : 'The agent is generating prompts from your use case.' }}
           </p>
+          <p v-if="personaEnabled && lastUsedSeed !== null" class="subtitle">Sampling seed: {{ lastUsedSeed }}</p>
         </div>
       </div>
+
+      <el-alert
+        v-if="connectionLost"
+        type="warning"
+        show-icon
+        :closable="false"
+        :title="CONNECTION_LOST_MESSAGE"
+        class="generation-error"
+      />
 
       <el-alert
         v-if="generationStatus === 'failed'"
@@ -58,11 +70,14 @@
       <el-button
         type="primary"
         :disabled="generateDisabled"
-        :loading="generationStatus === 'generating'"
+        :loading="generationStatusIsGenerating"
         @click="handleGenerate"
       >
         {{ generationStatus === 'failed' ? 'Try Again' : 'Generate Prompt Population' }}
       </el-button>
+      <span v-if="generationStatus === 'failed' && personaEnabled && lastUsedSeed !== null" class="seed-note">
+        Last attempt used seed {{ lastUsedSeed }}
+      </span>
     </template>
 
     <template v-else>
@@ -114,7 +129,7 @@
                 </el-select>
               </el-form-item>
               <el-form-item label="Model">
-                <el-input v-model="form.model" placeholder="Leave blank to use backend .env" />
+                <el-input v-model="form.modelName" placeholder="Leave blank to use backend .env" />
               </el-form-item>
               <el-form-item :label="personaEnabled ? 'Population Size' : 'Prompt Count'">
                 <el-input-number v-model="form.promptCount" :min="1" :max="1000" style="width: 100%" />
@@ -124,7 +139,7 @@
               </el-form-item>
               <el-form-item label="Additional Instructions (optional)">
                 <el-input
-                  v-model="form.additionalInstructions"
+                  v-model="form.additionalInstruction"
                   type="textarea"
                   :rows="3"
                   placeholder="Generate realistic and diverse prompts. Include different wording styles and different levels of detail."
@@ -172,6 +187,8 @@ import { CircleCheckFilled, Loading } from '@element-plus/icons-vue'
 import { computed, reactive, ref } from 'vue'
 
 import PersonaPopulationSettings from '@/components/prompts/PersonaPopulationSettings.vue'
+import { CONNECTION_LOST_MESSAGE } from '@/composables/usePolling'
+import { freshSeed } from '@/composables/usePersonaCatalog'
 import {
   PROVIDER_OPTIONS,
   type GenerationStatus,
@@ -187,6 +204,7 @@ const props = defineProps<{
   population: PromptPopulationSummary | null
   promptCount: number
   error?: string | null
+  connectionLost?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -199,34 +217,37 @@ const personaEnabled = ref(true)
 const personaConfig = ref<PersonaConfig>({
   enabled: true,
   pool: '',
-  selected_attributes: ['gender_identity'],
+  selectedAttributes: ['gender_identity'],
   filters: {},
   stratify: null,
-  seed: freshSeed(),
-  counterfactual_enabled: true,
+  // null = random: a fresh seed is drawn per generation (and reported back).
+  seed: null,
+  counterfactualEnabled: true,
 })
+// The seed actually sent with the most recent generate/regenerate request.
+const lastUsedSeed = ref<number | null>(null)
 
 const showRegenerateDialog = ref(false)
 const regenerateMode = ref<RegenerateMode>('replace')
 
 const generateDisabled = computed(
-  () => generationStatusIsGenerating.value || (personaEnabled.value && personaConfig.value.selected_attributes.length === 0),
+  () => generationStatusIsGenerating.value || (personaEnabled.value && personaConfig.value.selectedAttributes.length === 0),
 )
-const generationStatusIsGenerating = computed(() => props.generationStatus === 'generating')
+const generationStatusIsGenerating = computed(
+  () => props.generationStatus === 'generating' || props.generationStatus === 'pending',
+)
 
 function generationPayload(): PromptGenerationConfig {
-  const seed = freshSeed()
-  personaConfig.value = { ...personaConfig.value, seed }
+  // Keep a user-chosen seed as-is (reproducible); only draw a fresh one when
+  // the seed is set to random. The user's setting itself is not overwritten.
+  const seed = personaConfig.value.seed ?? freshSeed()
+  lastUsedSeed.value = seed
   return {
     ...form,
     persona: personaEnabled.value
       ? { ...personaConfig.value, enabled: true, seed }
-      : { enabled: false, selected_attributes: [], filters: {}, stratify: null, seed, counterfactual_enabled: false },
+      : { enabled: false, selectedAttributes: [], filters: {}, stratify: null, seed, counterfactualEnabled: false },
   }
-}
-
-function freshSeed() {
-  return Date.now() % 2_147_483_647
 }
 
 function handleGenerate() {
@@ -257,6 +278,11 @@ function handleRegenerateConfirm() {
 }
 .generation-error {
   margin-bottom: 16px;
+}
+.seed-note {
+  margin-left: 12px;
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
 }
 .completed .title {
   display: flex;

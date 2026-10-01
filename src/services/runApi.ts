@@ -1,50 +1,27 @@
 import api from "./api";
 import type { RunStatus } from "@/types";
 
-interface BackendRunStatus {
-	id?: number;
-	run_id?: number;
-	status: RunStatus["status"];
-	total_prompts?: number;
-	completed_prompts?: number;
-	total_generations?: number;
-	completed_generations?: number;
-	error_message?: string | null;
-}
-
-function normalizeRunStatus(data: BackendRunStatus): RunStatus {
-	return {
-		runId: data.run_id?.toString() ?? data.id?.toString() ?? null,
-		status: data.status,
-		totalPrompts: data.total_prompts ?? 0,
-		completedPrompts: data.completed_prompts ?? 0,
-		totalGenerations: data.total_generations ?? 0,
-		completedGenerations: data.completed_generations ?? 0,
-		error: data.error_message ?? null,
-	};
-}
-
 export const runApi = {
 	startRun(evaluationId: string) {
 		return api
-			.post<BackendRunStatus>(`/evaluations/${evaluationId}/runs/`, {})
-			.then((res) => normalizeRunStatus(res.data));
+			.post<RunStatus>(`/evaluations/${evaluationId}/runs/`, {})
+			.then((res) => res.data);
 	},
 	resumeRun(evaluationId: string, runId: string) {
 		return api
-			.post<BackendRunStatus>(`/evaluations/${evaluationId}/runs/`, {
-				resume_run_id: Number(runId),
+			.post<RunStatus>(`/evaluations/${evaluationId}/runs/`, {
+				resumeRunId: Number(runId),
 			})
-			.then((res) => normalizeRunStatus(res.data));
+			.then((res) => res.data);
 	},
-	fetchRunStatus(runId: string) {
+	fetchRunStatus(runId: string, signal?: AbortSignal) {
 		return api
-			.get<BackendRunStatus>(`/runs/${runId}/status/`)
-			.then((res) => normalizeRunStatus(res.data));
+			.get<RunStatus>(`/runs/${runId}/status/`, { signal })
+			.then((res) => res.data);
 	},
-	fetchLatestRun(evaluationId: string) {
+	fetchLatestRun(evaluationId: string, signal?: AbortSignal) {
 		return api
-			.get<BackendRunStatus>(`/evaluations/${evaluationId}/runs/latest/`)
-			.then((res) => normalizeRunStatus(res.data));
+			.get<RunStatus>(`/evaluations/${evaluationId}/runs/latest/`, { signal })
+			.then((res) => res.data);
 	},
 };

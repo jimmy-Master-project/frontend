@@ -7,8 +7,12 @@
         </template>
         <p class="full-prompt">{{ group.promptText }}</p>
         <div v-for="item in group.items" :key="item.id" class="generation-block">
-          <h5>Generation {{ item.generationIndex }}</h5>
-          <p>{{ item.response }}</p>
+          <h5>
+            Generation {{ item.generationIndex }}
+            <el-tag v-if="item.error" size="small" type="danger">Generation failed</el-tag>
+          </h5>
+          <p v-if="item.error" class="error-text">{{ item.error }}</p>
+          <p v-if="item.response">{{ item.response }}</p>
         </div>
       </el-collapse-item>
     </el-collapse>
@@ -68,6 +72,9 @@ function truncate(text: string, length = 60) {
   margin: 0 0 6px;
   font-size: 13px;
   color: var(--el-text-color-secondary);
+}
+.generation-block .error-text {
+  color: var(--el-color-danger);
 }
 .generation-block p {
   margin: 0;
