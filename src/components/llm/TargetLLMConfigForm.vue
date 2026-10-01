@@ -6,7 +6,14 @@
       </el-select>
     </el-form-item>
     <el-form-item label="Model Name">
-      <el-input v-model="form.modelName" placeholder="gpt-4o-mini" />
+      <ModelNameSelect
+        v-model="form.modelName"
+        :provider="form.provider"
+        :base-url="form.baseUrl"
+        :api-key="form.apiKey"
+        :evaluation-id="evaluationId"
+        placeholder="gpt-4o-mini"
+      />
     </el-form-item>
     <el-form-item label="Base URL">
       <el-input v-model="form.baseUrl" :placeholder="defaultBaseUrl(form.provider)" />
@@ -64,11 +71,13 @@
 <script setup lang="ts">
 import { reactive, watch } from 'vue'
 
+import ModelNameSelect from './ModelNameSelect.vue'
 import { PROVIDER_OPTIONS, defaultBaseUrl, type LLMConfig, type Provider } from '@/types'
 import type { TestConnectionResult } from '@/services/llmConfigApi'
 
 const props = defineProps<{
   modelValue: LLMConfig
+  evaluationId?: string | null
   saving?: boolean
   testing?: boolean
   testResult?: TestConnectionResult | null

@@ -20,6 +20,7 @@ import { VueFlow, addEdge, useVueFlow, type Connection, type Edge, type Node } f
 import { ElMessage } from 'element-plus'
 
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
+import ModelNameSelect from '@/components/llm/ModelNameSelect.vue'
 import WorkflowNode, { type FlowNodeData, type FlowNodeKind, type FlowNodeStatus } from '@/components/flow/WorkflowNode.vue'
 import { isGenderAttribute, usePersonaCatalog } from '@/composables/usePersonaCatalog'
 import { CONNECTION_LOST_MESSAGE, useUnmountSignal } from '@/composables/usePolling'
@@ -1050,7 +1051,14 @@ async function confirmDelete() {
               <el-option v-for="option in PROVIDER_OPTIONS" :key="option.value" :label="option.label" :value="option.value" />
             </el-select>
             <label>MODEL NAME</label>
-            <el-input v-model="selectedBotConfig.modelName" placeholder="gpt-4o-mini" />
+            <ModelNameSelect
+              v-model="selectedBotConfig.modelName"
+              :provider="selectedBotConfig.provider"
+              :base-url="selectedBotConfig.baseUrl"
+              :api-key="selectedBotConfig.apiKey"
+              :evaluation-id="evaluationId"
+              placeholder="gpt-4o-mini"
+            />
             <label>BASE URL</label>
             <el-input
               v-model="selectedBotConfig.baseUrl"

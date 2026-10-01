@@ -8,6 +8,7 @@
     <el-card v-else shadow="never" class="form-card">
       <TargetLLMConfigForm
         :model-value="configValues"
+        :evaluation-id="evaluationId"
         :saving="llmStore.saving"
         :testing="llmStore.testing"
         :test-result="llmStore.testResult"

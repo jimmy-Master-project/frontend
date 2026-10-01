@@ -21,3 +21,17 @@ export const llmConfigApi = {
       .then(res => res.data)
   },
 }
+
+export interface ModelListResult {
+  models: string[]
+  error: string | null
+}
+
+export const llmModelsApi = {
+  /** Never rejects for an unreachable endpoint: the backend reports it in `error`. */
+  list(evaluationId: string, payload: { provider: string; baseUrl: string; apiKey?: string }, signal?: AbortSignal) {
+    return api
+      .post<ModelListResult>(`/evaluations/${evaluationId}/llm-config/models/`, payload, { signal })
+      .then(res => res.data)
+  },
+}
