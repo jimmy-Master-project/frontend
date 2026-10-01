@@ -18,9 +18,17 @@
     <el-form-item label="Base URL">
       <el-input v-model="form.baseUrl" :placeholder="defaultBaseUrl(form.provider)" />
     </el-form-item>
-    <el-form-item label="API Key">
+    <el-form-item v-if="needsApiKey(form.provider)" label="API Key">
       <el-input v-model="form.apiKey" type="password" show-password placeholder="••••••••••" />
     </el-form-item>
+    <el-alert
+      v-else
+      title="EVA Air 透過本機 evaair-bot 服務提問（不需要 API key）；Temperature、Top P、Max Tokens 對聊天機器人沒有作用。"
+      type="info"
+      show-icon
+      :closable="false"
+      class="repeat-help"
+    />
     <el-form-item label="Temperature">
       <el-slider v-model="form.temperature" :min="0" :max="2" :step="0.1" show-input />
     </el-form-item>
@@ -72,7 +80,7 @@
 import { reactive, watch } from 'vue'
 
 import ModelNameSelect from './ModelNameSelect.vue'
-import { PROVIDER_OPTIONS, defaultBaseUrl, type LLMConfig, type Provider } from '@/types'
+import { PROVIDER_OPTIONS, defaultBaseUrl, needsApiKey, type LLMConfig, type Provider } from '@/types'
 import type { TestConnectionResult } from '@/services/llmConfigApi'
 
 const props = defineProps<{
@@ -90,10 +98,10 @@ defineEmits<{
 
 const form = reactive(normalize(props.modelValue))
 
-/** Older configs may carry a removed provider (custom, gemini); fall back to OpenAI. */
+/** Older configs may carry a removed provider (custom, gemini, openai_compatible); fall back to OpenAI. */
 function normalize(config: LLMConfig): LLMConfig {
   // Configs saved as "openai_compatible" against the official endpoint are just OpenAI.
-  if (config.provider === 'openai_compatible' && config.baseUrl === defaultBaseUrl('openai')) {
+  if ((config.provider as string) === 'openai_compatible' && config.baseUrl === defaultBaseUrl('openai')) {
     return { ...config, provider: 'openai' }
   }
   if (PROVIDER_OPTIONS.some(option => option.value === config.provider)) return { ...config }
@@ -103,6 +111,8 @@ function normalize(config: LLMConfig): LLMConfig {
 
 function selectProvider(provider: Provider) {
   form.baseUrl = defaultBaseUrl(provider)
+  // A model name only makes sense for the provider it came from.
+  form.modelName = ''
 }
 
 watch(

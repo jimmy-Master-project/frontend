@@ -8,7 +8,7 @@
       <el-form label-position="top">
         <el-form-item label="Provider">
           <el-select v-model="form.provider" style="width: 100%">
-            <el-option v-for="opt in PROVIDER_OPTIONS" :key="opt.value" :label="opt.label" :value="opt.value" />
+            <el-option v-for="opt in PROMPT_AGENT_PROVIDER_OPTIONS" :key="opt.value" :label="opt.label" :value="opt.value" />
           </el-select>
         </el-form-item>
         <el-form-item label="Model">
@@ -125,7 +125,7 @@
             <el-form label-position="top">
               <el-form-item label="Provider">
                 <el-select v-model="form.provider" style="width: 100%">
-                  <el-option v-for="opt in PROVIDER_OPTIONS" :key="opt.value" :label="opt.label" :value="opt.value" />
+                  <el-option v-for="opt in PROMPT_AGENT_PROVIDER_OPTIONS" :key="opt.value" :label="opt.label" :value="opt.value" />
                 </el-select>
               </el-form-item>
               <el-form-item label="Model">
@@ -190,7 +190,7 @@ import PersonaPopulationSettings from '@/components/prompts/PersonaPopulationSet
 import { CONNECTION_LOST_MESSAGE } from '@/composables/usePolling'
 import { freshSeed } from '@/composables/usePersonaCatalog'
 import {
-  PROVIDER_OPTIONS,
+  PROMPT_AGENT_PROVIDER_OPTIONS,
   type GenerationStatus,
   type PersonaConfig,
   type PromptGenerationConfig,

@@ -71,6 +71,8 @@ async function refresh() {
     if (current.signal.aborted) return
     models.value = result.models
     error.value = result.error
+    // Single-model endpoints (e.g. the EVA Air bot) need no choice.
+    if (!props.modelValue && result.models.length === 1) emit('update:modelValue', result.models[0])
   } catch (err) {
     if (current.signal.aborted) return
     models.value = []

@@ -34,10 +34,12 @@ import { useLlmConfigStore } from '@/stores/llmConfig'
 import { usePromptPopulationStore } from '@/stores/promptPopulation'
 import { useRunStore } from '@/stores/run'
 import {
+  PROMPT_AGENT_PROVIDER_OPTIONS,
   PROVIDER_OPTIONS,
   defaultBaseUrl,
   type LLMConfig,
   type PromptGenerationConfig,
+  type PromptAgentProvider,
   type Provider,
   type ResponseItem,
   type RunState,
@@ -137,7 +139,7 @@ unmountSignal.addEventListener('abort', () => evaluationController.abort(), { on
 
 // ----------------------------------------------------------- prompt node form
 const promptCount = ref(100)
-const promptProvider = ref<Provider>('openai_compatible')
+const promptProvider = ref<PromptAgentProvider>('openai_compatible')
 const promptModel = ref('gpt-4o-mini')
 const promptTemperature = ref(0.8)
 const personaTargetAttribute = ref('')
@@ -394,7 +396,11 @@ function restoreBots(evaluationId: string) {
       ? (savedConfigs as Record<string, Partial<LLMConfig>>)[node.id]
       : undefined
     // API keys are never persisted; they must be re-entered per session.
-    configs[node.id] = { ...defaultBotConfig(), ...(saved && typeof saved === 'object' ? saved : {}), apiKey: '' }
+    const merged = { ...defaultBotConfig(), ...(saved && typeof saved === 'object' ? saved : {}), apiKey: '' }
+    // Bots saved before the provider list changed (openai_compatible, custom…).
+    configs[node.id] = PROVIDER_OPTIONS.some(option => option.value === merged.provider)
+      ? merged
+      : { ...merged, provider: 'openai', baseUrl: defaultBaseUrl('openai') }
   }
   botConfigs.value = configs
   const savedRuns = readFlowJson(flowStorageKeys.botRuns(evaluationId))
@@ -1004,7 +1010,7 @@ async function confirmDelete() {
           <section v-else-if="selectedKind === 'prompts'" class="config-section">
             <label>GENERATION PROVIDER</label>
             <el-select v-model="promptProvider" class="full-width">
-              <el-option v-for="option in PROVIDER_OPTIONS" :key="option.value" :label="option.label" :value="option.value" />
+              <el-option v-for="option in PROMPT_AGENT_PROVIDER_OPTIONS" :key="option.value" :label="option.label" :value="option.value" />
             </el-select>
             <label>MODEL</label>
             <el-input v-model="promptModel" placeholder="gpt-4o-mini" />
@@ -1046,7 +1052,7 @@ async function confirmDelete() {
             <el-select
               v-model="selectedBotConfig.provider"
               class="full-width"
-              @change="(provider: Provider) => selectedBotConfig && (selectedBotConfig.baseUrl = defaultBaseUrl(provider))"
+              @change="(provider: Provider) => selectedBotConfig && Object.assign(selectedBotConfig, { baseUrl: defaultBaseUrl(provider), modelName: '' })"
             >
               <el-option v-for="option in PROVIDER_OPTIONS" :key="option.value" :label="option.label" :value="option.value" />
             </el-select>
