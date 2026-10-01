@@ -34,6 +34,7 @@ import { usePromptPopulationStore } from '@/stores/promptPopulation'
 import { useRunStore } from '@/stores/run'
 import {
   PROVIDER_OPTIONS,
+  defaultBaseUrl,
   type LLMConfig,
   type PromptGenerationConfig,
   type Provider,
@@ -92,9 +93,9 @@ function defaultEdges(nodes: FlowNode[]): Edge[] {
 }
 function defaultBotConfig(): LLMConfig {
   return {
-    provider: 'openai_compatible',
+    provider: 'openai',
     modelName: '',
-    baseUrl: '',
+    baseUrl: defaultBaseUrl('openai'),
     apiKey: '',
     temperature: 0.7,
     topP: 1,
@@ -1041,15 +1042,19 @@ async function confirmDelete() {
 
           <section v-else-if="selectedKind === 'llm' && selectedBotConfig" class="config-section">
             <label>PROVIDER</label>
-            <el-select v-model="selectedBotConfig.provider" class="full-width">
+            <el-select
+              v-model="selectedBotConfig.provider"
+              class="full-width"
+              @change="(provider: Provider) => selectedBotConfig && (selectedBotConfig.baseUrl = defaultBaseUrl(provider))"
+            >
               <el-option v-for="option in PROVIDER_OPTIONS" :key="option.value" :label="option.label" :value="option.value" />
             </el-select>
             <label>MODEL NAME</label>
-            <el-input v-model="selectedBotConfig.modelName" placeholder="model-name" />
+            <el-input v-model="selectedBotConfig.modelName" placeholder="gpt-4o-mini" />
             <label>BASE URL</label>
             <el-input
               v-model="selectedBotConfig.baseUrl"
-              :placeholder="selectedBotConfig.provider === 'custom' ? 'https://bot.example.com/generate' : 'https://api.example.com/v1'"
+              :placeholder="defaultBaseUrl(selectedBotConfig.provider)"
             />
             <label>API KEY</label>
             <el-input
@@ -1067,9 +1072,6 @@ async function confirmDelete() {
             <el-input-number v-model="selectedBotConfig.topP" :min="0" :max="1" :step="0.05" :precision="2" class="full-width" />
             <label>GENERATIONS PER PROMPT</label>
             <el-input-number v-model="selectedBotConfig.generationsPerPrompt" :min="1" :max="100" class="full-width" />
-            <p v-if="selectedBotConfig.provider === 'custom'" class="help-text">
-              Custom bot must accept POST JSON with prompt/model/temperature/top_p/max_tokens and return text, response, output, or message.content.
-            </p>
             <p class="help-text">
               The evaluation has a single Target LLM config: this bot is written to it right before its run (and by
               "Test connection"). API keys are kept in memory only and are not saved in the browser; a blank key keeps

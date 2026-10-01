@@ -23,14 +23,16 @@ export type EvaluationStatus =
 	| "completed"
 	| "failed";
 
-export type Provider = "openai_compatible" | "openai" | "gemini" | "custom";
+export type Provider = "openai" | "openai_compatible";
 
-export const PROVIDER_OPTIONS: Array<{ label: string; value: Provider }> = [
-	{ label: "OpenAI Compatible", value: "openai_compatible" },
-	{ label: "OpenAI", value: "openai" },
-	{ label: "Gemini", value: "gemini" },
-	{ label: "Custom", value: "custom" },
+export const PROVIDER_OPTIONS: Array<{ label: string; value: Provider; defaultBaseUrl: string }> = [
+	{ label: "OpenAI", value: "openai", defaultBaseUrl: "https://api.openai.com/v1" },
+	{ label: "OpenAI Compatible (vLLM / llama.cpp…)", value: "openai_compatible", defaultBaseUrl: "http://127.0.0.1:8080/v1" },
 ];
+
+export function defaultBaseUrl(provider: Provider): string {
+	return PROVIDER_OPTIONS.find((option) => option.value === provider)?.defaultBaseUrl ?? "";
+}
 
 export interface ClassificationLabel {
 	value: number;

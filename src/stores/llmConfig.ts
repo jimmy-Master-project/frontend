@@ -3,12 +3,12 @@ import { ref } from 'vue'
 
 import { formatApiError } from '@/services/api'
 import { llmConfigApi, type TestConnectionResult } from '@/services/llmConfigApi'
-import type { LLMConfig, Provider } from '@/types'
+import { defaultBaseUrl, type LLMConfig, type Provider } from '@/types'
 
 const DEFAULT_CONFIG: LLMConfig = {
-  provider: 'openai_compatible',
+  provider: 'openai',
   modelName: '',
-  baseUrl: '',
+  baseUrl: defaultBaseUrl('openai'),
   temperature: 0.7,
   topP: 0.9,
   maxTokens: 512,

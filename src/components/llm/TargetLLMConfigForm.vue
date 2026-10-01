@@ -1,31 +1,15 @@
 <template>
   <el-form label-position="top">
-    <el-form-item label="Target LLM">
-      <el-select v-model="target" style="width: 100%" @change="selectTarget">
-        <el-option label="Taipei Metro chatbot" value="mrt" />
-        <el-option label="Fubon chatbot" value="fubon" />
-        <el-option label="EVA Air chatbot" value="evaair" />
-        <el-option label="OpenAI-compatible" value="openai_compatible" />
-      </el-select>
-    </el-form-item>
     <el-form-item label="Provider">
-      <el-select v-model="form.provider" style="width: 100%">
+      <el-select v-model="form.provider" style="width: 100%" @change="selectProvider">
         <el-option v-for="opt in PROVIDER_OPTIONS" :key="opt.value" :label="opt.label" :value="opt.value" />
       </el-select>
     </el-form-item>
     <el-form-item label="Model Name">
-      <el-select v-model="form.modelName" style="width: 100%" @change="selectModel">
-        <el-option label="MRT" value="mrt" />
-        <el-option label="Fubon" value="fubon" />
-        <el-option label="EVA Air" value="evaair" />
-        <el-option label="OpenAI" value="openai" />
-      </el-select>
+      <el-input v-model="form.modelName" placeholder="gpt-4o-mini" />
     </el-form-item>
-    <el-form-item :label="form.provider === 'custom' ? 'Robot POST URL' : 'Base URL'">
-      <el-input
-        v-model="form.baseUrl"
-        :placeholder="form.provider === 'custom' ? 'https://robot.example.com/generate' : 'http://localhost:1234/v1'"
-      />
+    <el-form-item label="Base URL">
+      <el-input v-model="form.baseUrl" :placeholder="defaultBaseUrl(form.provider)" />
     </el-form-item>
     <el-form-item label="API Key">
       <el-input v-model="form.apiKey" type="password" show-password placeholder="••••••••••" />
@@ -78,9 +62,9 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, ref, watch } from 'vue'
+import { reactive, watch } from 'vue'
 
-import { PROVIDER_OPTIONS, type LLMConfig } from '@/types'
+import { PROVIDER_OPTIONS, defaultBaseUrl, type LLMConfig, type Provider } from '@/types'
 import type { TestConnectionResult } from '@/services/llmConfigApi'
 
 const props = defineProps<{
@@ -95,44 +79,26 @@ defineEmits<{
   test: []
 }>()
 
-const form = reactive({ ...props.modelValue })
-const target = ref(targetName(props.modelValue))
+const form = reactive(normalize(props.modelValue))
 
-function targetName(config: LLMConfig) {
-  if (config.provider === 'custom' && config.baseUrl.includes(':8767/generate')) return 'mrt'
-  if (config.provider === 'custom' && config.baseUrl.includes(':8766/generate')) return 'fubon'
-  if (config.provider === 'custom' && config.baseUrl.includes(':8768/generate')) return 'evaair'
-  if (config.provider === 'openai_compatible' || config.provider === 'openai') return 'openai_compatible'
-  return 'custom'
+/** Older configs may carry a removed provider (custom, gemini); fall back to OpenAI. */
+function normalize(config: LLMConfig): LLMConfig {
+  // Configs saved as "openai_compatible" against the official endpoint are just OpenAI.
+  if (config.provider === 'openai_compatible' && config.baseUrl === defaultBaseUrl('openai')) {
+    return { ...config, provider: 'openai' }
+  }
+  if (PROVIDER_OPTIONS.some(option => option.value === config.provider)) return { ...config }
+  return { ...config, provider: 'openai', baseUrl: defaultBaseUrl('openai') }
 }
 
-function selectTarget(value: string) {
-  if (value === 'mrt' || value === 'fubon' || value === 'evaair') {
-    Object.assign(form, {
-      provider: 'custom',
-      modelName: value,
-      baseUrl: `http://127.0.0.1:${value === 'mrt' ? '8767' : value === 'fubon' ? '8766' : '8768'}/generate`,
-      apiKey: '',
-    })
-  } else if (value === 'openai_compatible') {
-    form.provider = 'openai_compatible'
-  }
-}
-
-function selectModel(value: string) {
-  if (value === 'mrt' || value === 'fubon' || value === 'evaair') {
-    selectTarget(value)
-  } else if (value === 'openai') {
-    target.value = 'openai_compatible'
-    form.provider = 'openai_compatible'
-  }
+function selectProvider(provider: Provider) {
+  form.baseUrl = defaultBaseUrl(provider)
 }
 
 watch(
   () => props.modelValue,
   value => {
-    Object.assign(form, value)
-    target.value = targetName(value)
+    Object.assign(form, normalize(value))
   },
 )
 </script>
