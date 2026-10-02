@@ -23,7 +23,7 @@ export type EvaluationStatus =
 	| "completed"
 	| "failed";
 
-export type Provider = "openai" | "evaair" | "virgin";
+export type Provider = "openai" | "evaair" | "virgin" | "priceline";
 
 export const PROVIDER_OPTIONS: Array<{ label: string; value: Provider; defaultBaseUrl: string; needsApiKey: boolean }> = [
 	{ label: "OpenAI", value: "openai", defaultBaseUrl: "https://api.openai.com/v1", needsApiKey: true },
@@ -31,6 +31,8 @@ export const PROVIDER_OPTIONS: Array<{ label: string; value: Provider; defaultBa
 	{ label: "EVA Air chatbot", value: "evaair", defaultBaseUrl: "http://127.0.0.1:8768/v1", needsApiKey: false },
 	// Driven through a real browser by the browser-bots service.
 	{ label: "Virgin Atlantic Concierge AI", value: "virgin", defaultBaseUrl: "http://127.0.0.1:8769/virgin/v1", needsApiKey: false },
+	// Priceline Penny HTTP API, wrapped by the priceline-bot service.
+	{ label: "Priceline Penny", value: "priceline", defaultBaseUrl: "http://127.0.0.1:8770/v1", needsApiKey: false },
 ];
 
 /** Prompt Generation Agent providers (backend prompt_agents); the EVA Air bot cannot write prompts. */
