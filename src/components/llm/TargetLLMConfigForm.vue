@@ -23,7 +23,7 @@
     </el-form-item>
     <el-alert
       v-else
-      title="EVA Air 透過本機 evaair-bot 服務提問（不需要 API key）；Temperature、Top P、Max Tokens 對聊天機器人沒有作用。"
+      :title="`${providerLabel(form.provider)} 透過本機服務提問（不需要 API key）；Temperature、Top P、Max Tokens 對聊天機器人沒有作用。`"
       type="info"
       show-icon
       :closable="false"
@@ -107,6 +107,10 @@ function normalize(config: LLMConfig): LLMConfig {
   if (PROVIDER_OPTIONS.some(option => option.value === config.provider)) return { ...config }
   // The model name belonged to the removed provider (e.g. a chatbot id), so drop it too.
   return { ...config, provider: 'openai', baseUrl: defaultBaseUrl('openai'), modelName: '' }
+}
+
+function providerLabel(provider: Provider) {
+  return PROVIDER_OPTIONS.find(option => option.value === provider)?.label ?? provider
 }
 
 function selectProvider(provider: Provider) {

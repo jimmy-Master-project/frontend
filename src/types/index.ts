@@ -23,12 +23,14 @@ export type EvaluationStatus =
 	| "completed"
 	| "failed";
 
-export type Provider = "openai" | "evaair";
+export type Provider = "openai" | "evaair" | "virgin";
 
 export const PROVIDER_OPTIONS: Array<{ label: string; value: Provider; defaultBaseUrl: string; needsApiKey: boolean }> = [
 	{ label: "OpenAI", value: "openai", defaultBaseUrl: "https://api.openai.com/v1", needsApiKey: true },
 	// Served by the evaair-bot service (OpenAI-compatible) next to the backend.
 	{ label: "EVA Air chatbot", value: "evaair", defaultBaseUrl: "http://127.0.0.1:8768/v1", needsApiKey: false },
+	// Driven through a real browser by the browser-bots service.
+	{ label: "Virgin Atlantic Concierge AI", value: "virgin", defaultBaseUrl: "http://127.0.0.1:8769/virgin/v1", needsApiKey: false },
 ];
 
 /** Prompt Generation Agent providers (backend prompt_agents); the EVA Air bot cannot write prompts. */
