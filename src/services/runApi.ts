@@ -21,9 +21,9 @@ export const runApi = {
 		return api.delete(`/runs/${runId}/`).then(() => undefined);
 	},
 	/**
-	 * Downloads the run's results as CSV: one table (`table` = run, responses,
-	 * prompts, personas, metrics, group_comparison, metrics_detail) or, without
-	 * `table`, a ZIP holding every table as its own CSV.
+	 * Downloads the run's results: without `table`, one .xlsx with every table
+	 * as its own worksheet; with `table` (run, responses, prompts, personas,
+	 * metrics, group_comparison, metrics_detail), that table as CSV.
 	 */
 	exportRun(runId: number | string, table?: string) {
 		return api
@@ -35,7 +35,7 @@ export const runApi = {
 				const disposition = String(res.headers["content-disposition"] ?? "");
 				const fileName =
 					/filename="([^"]+)"/.exec(disposition)?.[1] ??
-					`run${runId}_${table ?? "export"}.${table ? "csv" : "zip"}`;
+					`run${runId}_${table ?? "export"}.${table ? "csv" : "xlsx"}`;
 				return { blob: res.data, fileName };
 			});
 	},

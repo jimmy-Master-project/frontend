@@ -1,18 +1,18 @@
 <template>
   <el-dropdown trigger="click" :disabled="!runId || exporting" @command="download">
     <el-button :size="size" :text="text" :loading="exporting" :disabled="!runId">
-      Export CSV<el-icon class="el-icon--right"><ArrowDown /></el-icon>
+      Export<el-icon class="el-icon--right"><ArrowDown /></el-icon>
     </el-button>
     <template #dropdown>
       <el-dropdown-menu>
-        <el-dropdown-item command="">全部（ZIP，每類一個 CSV）</el-dropdown-item>
+        <el-dropdown-item command="">Excel 全部（一個檔案，每類一個工作表）</el-dropdown-item>
         <el-dropdown-item
           v-for="(table, index) in EXPORT_TABLES"
           :key="table.key"
           :command="table.key"
           :divided="index === 0 || table.group !== EXPORT_TABLES[index - 1].group"
         >
-          {{ table.label }}
+          {{ table.label }}（CSV）
         </el-dropdown-item>
       </el-dropdown-menu>
     </template>
