@@ -3,8 +3,6 @@
     <div class="page-header">
       <h2>LLM Evaluation Projects</h2>
        <div class="header-actions">
-         <el-button @click="router.push('/flow')">Flow Editor</el-button>
-         <el-button @click="router.push('/benchmark-validation')">Dataset Validation</el-button>
          <el-button type="primary" @click="router.push('/evaluations/new')">+ New Evaluation</el-button>
        </div>
     </div>
@@ -25,10 +23,11 @@
       <el-table-column label="Created" width="140">
         <template #default="{ row }">{{ row.createdAt }}</template>
       </el-table-column>
-      <el-table-column label="" width="220">
+      <el-table-column label="" width="290">
         <template #default="{ row }">
           <el-button text type="primary" @click="openEvaluation(row as Evaluation)">Open</el-button>
           <el-button text @click="router.push(`/evaluations/${(row as Evaluation).id}/flow`)">Flow</el-button>
+          <el-button text @click="router.push(`/evaluations/${(row as Evaluation).id}/history`)">History</el-button>
           <el-button text type="danger" @click="confirmDelete(row as Evaluation)">Delete</el-button>
         </template>
       </el-table-column>

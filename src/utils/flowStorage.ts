@@ -11,6 +11,8 @@ export const flowStorageKeys = {
   layout: (evaluationId: string) => `${PREFIX}:layout:${evaluationId}`,
   bots: (evaluationId: string) => `${PREFIX}:bots:${evaluationId}`,
   botRuns: (evaluationId: string) => `${PREFIX}:bot-runs:${evaluationId}`,
+  /** Reusable Target LLM configs shared by every evaluation (no API keys). */
+  botPresets: () => `${PREFIX}:bot-presets`,
 }
 
 /** Keys written by the standalone frontend-node-v app (read-only fallback). */

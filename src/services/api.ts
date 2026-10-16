@@ -1,4 +1,4 @@
-import axios, { type AxiosError } from 'axios'
+import axios, { type AxiosError, type InternalAxiosRequestConfig } from 'axios'
 
 /**
  * Normalized error rejected by every request made through `api`.
@@ -160,9 +160,82 @@ const api = axios.create({
   timeout: 30000,
 })
 
+/**
+ * One completed request as seen by `api` (success or HTTP / network error).
+ * Bodies are the parsed JSON when possible; listeners must treat them as
+ * read-only.
+ */
+export interface ApiTraceEntry {
+  method: string
+  url: string
+  params: unknown
+  requestBody: unknown
+  status: number | null
+  responseBody: unknown
+  error: string | null
+  startedAt: string
+  durationMs: number
+}
+
+type ApiTraceListener = (entry: ApiTraceEntry) => void
+const traceListeners = new Set<ApiTraceListener>()
+const requestStartedAt = new WeakMap<InternalAxiosRequestConfig, number>()
+
+/** Observe every request made through `api`; returns the unsubscribe function. */
+export function onApiTrace(listener: ApiTraceListener): () => void {
+  traceListeners.add(listener)
+  return () => traceListeners.delete(listener)
+}
+
+function parseBody(data: unknown): unknown {
+  if (typeof data !== 'string') return data instanceof FormData ? '[FormData]' : data ?? null
+  try {
+    return JSON.parse(data) as unknown
+  } catch {
+    return data
+  }
+}
+
+function emitTrace(config: InternalAxiosRequestConfig | undefined, status: number | null, responseBody: unknown, error: string | null) {
+  if (!config || !traceListeners.size) return
+  const started = requestStartedAt.get(config) ?? Date.now()
+  const entry: ApiTraceEntry = {
+    method: (config.method ?? 'get').toUpperCase(),
+    url: config.url ?? '',
+    params: config.params ?? null,
+    requestBody: parseBody(config.data),
+    status,
+    responseBody,
+    error,
+    startedAt: new Date(started).toISOString(),
+    durationMs: Date.now() - started,
+  }
+  for (const listener of traceListeners) {
+    try {
+      listener(entry)
+    } catch {
+      // A broken observer must never break the request itself.
+    }
+  }
+}
+
+api.interceptors.request.use(config => {
+  requestStartedAt.set(config, Date.now())
+  return config
+})
+
 api.interceptors.response.use(
-  response => response,
-  error => Promise.reject(parseApiError(error)),
+  response => {
+    emitTrace(response.config, response.status, response.data, null)
+    return response
+  },
+  error => {
+    const apiError = parseApiError(error)
+    if (!apiError.canceled) {
+      emitTrace((error as AxiosError | undefined)?.config, apiError.status, apiError.data ?? null, apiError.message)
+    }
+    return Promise.reject(apiError)
+  },
 )
 
 export default api

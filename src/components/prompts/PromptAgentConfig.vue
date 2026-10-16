@@ -34,6 +34,7 @@
         v-model:enabled="personaEnabled"
         v-model:population-size="form.promptCount"
         v-model:config="personaConfig"
+        :objective-count="objectiveCount"
       />
 
       <div v-if="generationStatusIsGenerating" class="generating">
@@ -151,6 +152,7 @@
               v-model:enabled="personaEnabled"
               v-model:population-size="form.promptCount"
               v-model:config="personaConfig"
+              :objective-count="objectiveCount"
             />
           </el-collapse-item>
         </el-collapse>
@@ -184,7 +186,7 @@
 
 <script setup lang="ts">
 import { CircleCheckFilled, Loading } from '@element-plus/icons-vue'
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 
 import PersonaPopulationSettings from '@/components/prompts/PersonaPopulationSettings.vue'
 import { CONNECTION_LOST_MESSAGE } from '@/composables/usePolling'
@@ -205,6 +207,8 @@ const props = defineProps<{
   promptCount: number
   error?: string | null
   connectionLost?: boolean
+  /** Task objectives of the evaluation (each repeats the whole population). */
+  objectiveCount?: number
 }>()
 
 const emit = defineEmits<{
@@ -224,6 +228,31 @@ const personaConfig = ref<PersonaConfig>({
   seed: null,
   counterfactualEnabled: true,
 })
+// Reuse the personas hand-picked for the latest population (once per
+// population, so later edits in the form are not overwritten).
+let restoredPopulationId: number | null = null
+watch(
+  () => props.population,
+  population => {
+    const persona = population?.persona
+    if (!population?.populationId || !persona?.personaIds?.length) return
+    if (restoredPopulationId === population.populationId) return
+    restoredPopulationId = population.populationId
+    personaEnabled.value = true
+    personaConfig.value = {
+      ...personaConfig.value,
+      enabled: true,
+      pool: persona.pool || personaConfig.value.pool,
+      selectedAttributes: persona.selectedAttributes?.length
+        ? [...persona.selectedAttributes]
+        : personaConfig.value.selectedAttributes,
+      counterfactualEnabled: persona.counterfactualEnabled ?? personaConfig.value.counterfactualEnabled,
+      personaIds: [...persona.personaIds],
+      personaSource: 'pick',
+    }
+  },
+  { immediate: true },
+)
 // The seed actually sent with the most recent generate/regenerate request.
 const lastUsedSeed = ref<number | null>(null)
 
@@ -231,7 +260,12 @@ const showRegenerateDialog = ref(false)
 const regenerateMode = ref<RegenerateMode>('replace')
 
 const generateDisabled = computed(
-  () => generationStatusIsGenerating.value || (personaEnabled.value && personaConfig.value.selectedAttributes.length === 0),
+  () =>
+    generationStatusIsGenerating.value ||
+    (personaEnabled.value &&
+      (personaConfig.value.selectedAttributes.length === 0 ||
+        // Pick mode with nothing ticked would silently fall back to sampling.
+        (personaConfig.value.personaSource === 'pick' && !personaConfig.value.personaIds?.length))),
 )
 const generationStatusIsGenerating = computed(
   () => props.generationStatus === 'generating' || props.generationStatus === 'pending',

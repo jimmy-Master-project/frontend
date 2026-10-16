@@ -64,6 +64,7 @@
 
     <template v-else-if="status === 'completed'">
       <h3>Evaluation Completed</h3>
+      <p class="status-text">Fairness metrics are computed automatically; open Fairness Metrics to see them.</p>
       <div class="detail-row"><span>Prompts</span><span>{{ totalPrompts }}</span></div>
       <div class="detail-row"><span>Responses</span><span>{{ completedGenerations }}</span></div>
       <template v-if="failedGenerations">
@@ -79,7 +80,8 @@
         />
       </template>
       <div class="actions">
-        <el-button type="primary" :disabled="starting" @click="$emit('retry')">Start New Run</el-button>
+        <el-button type="primary" :disabled="starting" @click="$emit('back-to-llm')">Change Target LLM &amp; run again</el-button>
+        <el-button :disabled="starting" @click="$emit('retry')">Start new run</el-button>
         <el-button :disabled="completedGenerations === 0" @click="$emit('view-responses')">
           View Responses
         </el-button>

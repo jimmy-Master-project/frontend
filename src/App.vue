@@ -3,7 +3,7 @@
     <header class="app-header">
       <router-link to="/" class="brand">LLM Fairness Evaluation Platform</router-link>
     </header>
-    <main class="app-main" :class="{ 'app-main--full': route.meta.fullWidth }">
+    <main class="app-main" :class="{ 'app-main--full': route.meta.fullWidth, 'app-main--wide': route.meta.wide }">
       <router-view />
     </main>
   </div>
@@ -55,6 +55,10 @@ body {
   margin: 0 auto;
   padding: 32px;
   box-sizing: border-box;
+}
+
+.app-main--wide {
+  max-width: 1440px;
 }
 
 .app-main--full {

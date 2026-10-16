@@ -20,6 +20,7 @@
         :prompt-count="promptStore.promptCount"
         :error="promptStore.error"
         :connection-lost="promptStore.connectionLost"
+        :objective-count="countObjectives(evaluationStore.taskObjectives)"
         @generate="handleGenerate"
         @regenerate="handleRegenerate"
       />
@@ -109,6 +110,7 @@ import PromptPopulationTable from '@/components/prompts/PromptPopulationTable.vu
 import { useUnmountSignal } from '@/composables/usePolling'
 import { formatApiError } from '@/services/api'
 import { useEvaluationStore } from '@/stores/evaluation'
+import { countObjectives } from '@/utils/promptPlan'
 import { usePromptPopulationStore } from '@/stores/promptPopulation'
 import type { EvaluationLanguage, Prompt, PromptGenerationConfig, RegenerateMode, TaskType } from '@/types'
 

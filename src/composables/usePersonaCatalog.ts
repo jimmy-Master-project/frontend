@@ -2,11 +2,12 @@ import { computed, ref } from 'vue'
 
 import { formatApiError } from '@/services/api'
 import { personaApi } from '@/services/personaApi'
-import type { PersonaAttribute, PersonaCatalog } from '@/types'
+import type { PersonaAttribute, PersonaCatalog, ProtectedAttribute } from '@/types'
 
 // Module-level cache: the catalog is global (not per evaluation), so every
 // PersonaPopulationSettings instance shares one request and one result.
 const attributes = ref<PersonaAttribute[]>([])
+const protectedAttributes = ref<ProtectedAttribute[]>([])
 const pool = ref<string | undefined>(undefined)
 // Mirrors the backend PersonaSampleRequestSerializer bounds (sampleSize 1..1000).
 const SAMPLE_SIZE_MIN = 1
@@ -59,6 +60,29 @@ export function freshSeed() {
 }
 
 const attributeMap = computed(() => new Map(attributes.value.map(attribute => [attribute.key, attribute])))
+const protectedMap = computed(() => new Map(protectedAttributes.value.map(attribute => [attribute.key, attribute])))
+
+/** Gender's legacy key "gender" is the same LangFair attribute as gender_identity. */
+function protectedFor(key: string) {
+  return protectedMap.value.get(key === 'gender' ? 'gender_identity' : key)
+}
+
+/** The LangFair group ("female", "asian", …) of a persona value, or null when it has none. */
+function langfairGroup(key: string, value: string | null | undefined) {
+  const spec = protectedFor(key)
+  if (!spec || value === null || value === undefined) return null
+  const normalized = String(value).trim().toLowerCase()
+  return spec.groups.find(group => group.values.some(item => item.toLowerCase() === normalized))?.name ?? null
+}
+
+/** Persona values of a protected attribute that belong to a LangFair group (as the pool spells them). */
+function supportedValues(key: string) {
+  const spec = protectedFor(key)
+  if (!spec) return []
+  const known = new Set(spec.groups.flatMap(group => group.values.map(value => value.toLowerCase())))
+  const poolValues = attributeMap.value.get(key)?.values ?? []
+  return poolValues.filter(value => known.has(value.toLowerCase()))
+}
 
 function labelFor(key: string) {
   return attributeMap.value.get(key)?.label || humanizeKey(key)
@@ -77,6 +101,7 @@ async function load(force = false): Promise<PersonaCatalog | null> {
     .getPersonaAttributes()
     .then(catalog => {
       attributes.value = prioritizeAttributes(catalog.attributes)
+      protectedAttributes.value = catalog.protectedAttributes ?? []
       pool.value = catalog.pool
       if (catalog.attributes.length === 0) {
         // Treat an empty catalog as "not ready" so the user gets a Retry.
@@ -102,6 +127,10 @@ async function load(force = false): Promise<PersonaCatalog | null> {
 export function usePersonaCatalog() {
   return {
     attributes: computed(() => attributes.value),
+    protectedAttributes: computed(() => protectedAttributes.value),
+    protectedFor,
+    langfairGroup,
+    supportedValues,
     attributeMap,
     pool: computed(() => pool.value),
     sampleSizeMin: computed(() => SAMPLE_SIZE_MIN),

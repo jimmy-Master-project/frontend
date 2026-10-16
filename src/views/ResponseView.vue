@@ -3,7 +3,13 @@
     <EvaluationStepper :active="4" />
     <h2>Evaluation Results</h2>
 
+    <RunSelect :evaluation-id="evaluationId" :model-value="responsesStore.selectedRunId" @update:model-value="changeRun" />
+
     <div class="response-summary">
+      <div class="summary-item">
+        <span class="label">Run</span>
+        <span class="value">{{ responsesStore.runId ? `#${responsesStore.runId}` : '—' }}{{ responsesStore.runLabel ? ` · ${responsesStore.runLabel}` : '' }}</span>
+      </div>
       <div class="summary-item">
         <span class="label">Model</span><span class="value">{{ responsesStore.model }}</span>
       </div>
@@ -16,9 +22,15 @@
     </div>
 
     <div class="result-actions">
-      <el-button type="primary" :disabled="!responsesStore.runId" @click="router.push(`/evaluations/${evaluationId}/fairness-metrics`)">
+      <el-button
+        type="primary"
+        :disabled="!responsesStore.runId"
+        @click="router.push({ path: `/evaluations/${evaluationId}/fairness-metrics`, query: runQuery })"
+      >
         View Fairness Metrics
       </el-button>
+      <el-button @click="router.push(`/evaluations/${evaluationId}/llm`)">Change Target LLM &amp; run again</el-button>
+      <RunExportMenu class="export-menu" :run-id="responsesStore.runId" />
     </div>
 
     <div class="toolbar">
@@ -87,6 +99,8 @@ import LoadingState from '@/components/common/LoadingState.vue'
 import PromptResponseGroup from '@/components/responses/PromptResponseGroup.vue'
 import ResponseDetailDrawer from '@/components/responses/ResponseDetailDrawer.vue'
 import ResponseTable from '@/components/responses/ResponseTable.vue'
+import RunExportMenu from '@/components/run/RunExportMenu.vue'
+import RunSelect from '@/components/run/RunSelect.vue'
 import { useResponsesStore } from '@/stores/responses'
 import type { ResponseItem } from '@/types'
 
@@ -98,6 +112,15 @@ const unmountSignal = useUnmountSignal()
 const responsesStore = useResponsesStore()
 // Clears responses/filters/page left over from a different evaluation.
 responsesStore.enterEvaluation(evaluationId.value)
+// ?runId= opens an earlier run (e.g. from the run history or a shared link).
+if (typeof route.query.runId === 'string') responsesStore.selectRun(route.query.runId)
+const runQuery = computed(() => (responsesStore.selectedRunId ? { runId: responsesStore.selectedRunId } : {}))
+
+function changeRun(runId: string | null) {
+  responsesStore.selectRun(runId)
+  void router.replace({ query: runId ? { runId } : {} })
+  void load()
+}
 
 // Local inputs start from the store so filters kept for this evaluation
 // (e.g. coming back from Fairness Metrics) stay visible and consistent.
@@ -174,6 +197,9 @@ function openDetail(item: ResponseItem) {
   display: flex;
   justify-content: flex-end;
   margin-bottom: 16px;
+}
+.export-menu {
+  margin-left: 12px;
 }
 .toolbar {
   display: flex;

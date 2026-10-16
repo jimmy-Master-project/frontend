@@ -2,8 +2,12 @@
 /**
  * Visual workflow editor (merged from the standalone frontend-node-v app).
  *
- * Models Evaluation → Prompt population → Bot(s) → Run → Responses as
- * draggable Vue Flow nodes. All data goes through the main app's services and
+ * Scoped to ONE evaluation (opened from that evaluation's "Flow" button):
+ * other evaluations are never listed or loaded here. Models Evaluation →
+ * Prompt population → Target LLM / Bot(s) → Run → Responses as draggable Vue
+ * Flow nodes, so the same flow can be re-run after swapping the Target LLM
+ * node (manually or from a reusable preset). Every node shows the real API
+ * requests/responses it produced (see useFlowApiTrace). All data goes through the main app's services and
  * stores; only the canvas layout, the per-bot configs (without API keys) and
  * the bot → run mapping are kept in (namespaced) localStorage.
  *
@@ -21,15 +25,18 @@ import { ElMessage } from 'element-plus'
 
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import ModelNameSelect from '@/components/llm/ModelNameSelect.vue'
+import PersonaPicker from '@/components/prompts/PersonaPicker.vue'
+import PromptPlanSummary from '@/components/prompts/PromptPlanSummary.vue'
 import WorkflowNode, { type FlowNodeData, type FlowNodeKind, type FlowNodeStatus } from '@/components/flow/WorkflowNode.vue'
 import { isGenderAttribute, usePersonaCatalog } from '@/composables/usePersonaCatalog'
+import { useLlmPresets } from '@/composables/useLlmPresets'
+import { NODE_ENDPOINTS, compactForDisplay, useFlowApiTrace, type FlowApiCall } from '@/composables/useFlowApiTrace'
 import { CONNECTION_LOST_MESSAGE, useUnmountSignal } from '@/composables/usePolling'
 import { formatApiError, isCanceledError, parseApiError } from '@/services/api'
-import { evaluationPath } from '@/services/evaluationApi'
+import { evaluationApi, evaluationPath } from '@/services/evaluationApi'
 import { llmConfigApi } from '@/services/llmConfigApi'
 import { responseApi } from '@/services/responseApi'
 import { runApi } from '@/services/runApi'
-import { useEvaluationStore } from '@/stores/evaluation'
 import { useLlmConfigStore } from '@/stores/llmConfig'
 import { usePromptPopulationStore } from '@/stores/promptPopulation'
 import { useRunStore } from '@/stores/run'
@@ -37,6 +44,7 @@ import {
   PROMPT_AGENT_PROVIDER_OPTIONS,
   PROVIDER_OPTIONS,
   defaultBaseUrl,
+  type Evaluation,
   type LLMConfig,
   type PromptGenerationConfig,
   type PromptAgentProvider,
@@ -46,11 +54,11 @@ import {
   type RunStatus,
 } from '@/types'
 import { flowStorageKeys, legacyFlowStorageKeys, readFlowJson, writeFlowJson } from '@/utils/flowStorage'
+import { countObjectives, type PickedPersonaInfo, type PromptPlanInput } from '@/utils/promptPlan'
 
-const props = defineProps<{ evaluationId?: string }>()
+const props = defineProps<{ evaluationId: string }>()
 
 const router = useRouter()
-const evaluationStore = useEvaluationStore()
 const promptStore = usePromptPopulationStore()
 const runStore = useRunStore()
 const llmStore = useLlmConfigStore()
@@ -70,12 +78,14 @@ const NODE_KINDS: FlowNodeKind[] = ['trigger', 'evaluation', 'prompts', 'llm', '
 const ACTIVE_RUN_STATES: RunState[] = ['pending', 'running']
 const EDGE_STYLE = { stroke: '#a6afb9', strokeWidth: 2 }
 const RESPONSE_PAGE_SIZE = 20
+const TARGET_LLM_NODE_ID = 'target-llm'
 
 function defaultNodes(): FlowNode[] {
   const rows: Array<[string, string, string, number, number, FlowNodeKind]> = [
     ['trigger', 'Manual trigger', 'Start the evaluation flow', 70, 150, 'trigger'],
     ['evaluation', 'Evaluation project', 'Select an existing project', 370, 150, 'evaluation'],
     ['prompts', 'Prompt population', 'Generate test prompts', 670, 150, 'prompts'],
+    [TARGET_LLM_NODE_ID, 'Target LLM', 'Model under evaluation (swappable)', 670, 430, 'llm'],
     ['run', 'Run evaluation', 'Execute the selected project', 370, 430, 'run'],
     ['responses', 'Responses', 'Inspect generated outputs', 70, 430, 'responses'],
   ]
@@ -111,6 +121,7 @@ function defaultBotConfig(): LLMConfig {
 const nodes = shallowRef<FlowNode[]>(defaultNodes())
 const edges = shallowRef<Edge[]>(defaultEdges(nodes.value))
 const selectedNodeId = ref('evaluation')
+const selectedEdgeId = ref('')
 const botConfigs = ref<Record<string, LLMConfig>>({})
 const botRuns = ref<Record<string, BotRunRecord>>({})
 const { fitView, zoomIn, zoomOut } = useVueFlow()
@@ -126,9 +137,11 @@ const selectedBotRun = computed(() =>
 )
 
 // ------------------------------------------------------------ evaluation state
-const evaluations = computed(() => evaluationStore.evaluations)
+// Only the evaluation in the route is ever loaded: the flow is per-task.
+const project = ref<Evaluation | null>(null)
+const projectLoading = ref(false)
 const selectedEvaluation = computed(() =>
-  evaluations.value.find(item => item.id === props.evaluationId),
+  project.value && project.value.id === props.evaluationId ? project.value : null,
 )
 const listError = ref('')
 
@@ -144,9 +157,60 @@ const promptModel = ref('gpt-4o-mini')
 const promptTemperature = ref(0.8)
 const personaTargetAttribute = ref('')
 const personaSeed = ref(42)
+// Personas: picked one by one (default) or sampled at random.
+const personaSource = ref<'pick' | 'sample'>('pick')
+const pickedPersonaIds = ref<string[]>([])
+const pickedPersonaInfo = ref<PickedPersonaInfo[]>([])
+const personaDialogOpen = ref(false)
+// Start from the people (and label) picked for the latest population, once per population.
+let seededFromPopulation: number | null = null
+watch(
+  () => promptStore.population,
+  population => {
+    const persona = population?.persona
+    if (!population?.populationId || seededFromPopulation === population.populationId) return
+    seededFromPopulation = population.populationId
+    if (persona?.personaIds?.length) {
+      pickedPersonaIds.value = [...persona.personaIds]
+      personaSource.value = 'pick'
+    }
+    const label = persona?.selectedAttributes?.find(key => personaCatalog.protectedFor(key))
+    if (label && !personaTargetAttribute.value) personaTargetAttribute.value = label
+  },
+  { immediate: true },
+)
+// Estimate of what "Generate prompts" will produce (null = no personas used).
+const promptPlanInput = computed<PromptPlanInput | null>(() => {
+  const label = personaTargetAttribute.value
+  if (!label) return null
+  const base = {
+    promptCount: promptCount.value,
+    objectiveCount: countObjectives(selectedEvaluation.value?.taskObjectives),
+    counterfactual: isGenderAttribute(label),
+  }
+  if (personaSource.value === 'sample') return { ...base, picked: null }
+  // The picker reports what it knows; before it is opened, fall back to the
+  // attributes recorded on prompts these personas generated earlier.
+  const known = new Map(pickedPersonaInfo.value.map(info => [info.id, info]))
+  const attributesById = new Map(
+    promptStore.prompts.filter(prompt => prompt.personaId).map(prompt => [prompt.personaId!, prompt.personaAttributes ?? {}]),
+  )
+  return {
+    ...base,
+    picked: pickedPersonaIds.value.map<PickedPersonaInfo>(id => {
+      const info = known.get(id)
+      if (info) return info
+      const attributes = attributesById.get(id)
+      return attributes
+        ? { id, name: id, hasDiagnostics: label in attributes, gender: attributes.gender_identity ?? attributes.gender ?? null }
+        : { id, name: id, hasDiagnostics: null, gender: null }
+    }),
+  }
+})
+// Fairness labels are limited to LangFair's protected attributes (gender, race/ethnicity).
 const personaAttributeOptions = computed(() =>
-  personaCatalog.attributes.value.map(attribute => ({
-    label: personaCatalog.labelFor(attribute.key),
+  personaCatalog.protectedAttributes.value.map(attribute => ({
+    label: `${attribute.label} (${attribute.counterfactual ? 'counterfactual pairs' : 'group comparison'})`,
     value: attribute.key,
   })),
 )
@@ -246,18 +310,44 @@ function nodeIo(nodeId: string) {
 }
 const selectedNodeIo = computed(() => (selectedNode.value ? nodeIo(selectedNode.value.id) : { input: {}, output: {} }))
 const formatData = (value: unknown) => JSON.stringify(value, null, 2) ?? 'No data yet.'
+
+// Real API traffic per node (request params/body → status/response body).
+const apiTrace = useFlowApiTrace(() => props.evaluationId)
+const selectedNodeCalls = computed<FlowApiCall[]>(() =>
+  selectedNode.value ? apiTrace.callsFor(selectedNode.value.id, selectedNode.value.data.kind) : [],
+)
+const selectedNodeEndpoints = computed(() => (selectedKind.value ? NODE_ENDPOINTS[selectedKind.value] : []))
+watch(
+  [() => activeBotId.value, selectedNodeId],
+  () => apiTrace.setLlmNode(activeBotId.value ?? (selectedKind.value === 'llm' ? selectedNodeId.value : null)),
+  { immediate: true },
+)
+const callTime = (call: FlowApiCall) => new Date(call.startedAt).toLocaleTimeString()
+function callRequest(call: FlowApiCall) {
+  return { method: call.method, url: call.url, params: call.params, body: call.requestBody }
+}
 function inspectNodeData(nodeId: string, direction: 'input' | 'output') {
   const node = nodes.value.find(item => item.id === nodeId)
   if (!node) return
   selectedNodeId.value = nodeId
-  ioDialog.value = { open: true, nodeTitle: node.data.title, direction, data: nodeIo(nodeId)[direction] }
+  const calls = apiTrace.callsFor(nodeId, node.data.kind)
+  const api = direction === 'input'
+    ? calls.map(call => ({ at: call.startedAt, ...callRequest(call) }))
+    : calls.map(call => ({ at: call.startedAt, endpoint: call.endpoint, status: call.status, error: call.error, durationMs: call.durationMs, body: compactForDisplay(call.responseBody, 20) }))
+  ioDialog.value = {
+    open: true,
+    nodeTitle: node.data.title,
+    direction,
+    data: { summary: nodeIo(nodeId)[direction], [direction === 'input' ? 'apiRequests' : 'apiResponses']: api },
+  }
 }
 
 const runHint = computed(() => {
-  if (!props.evaluationId) return 'Select a project to begin.'
+  if (!props.evaluationId) return 'Open a flow from an evaluation.'
   if (!promptStore.promptCount && !selectedEvaluation.value?.promptCount) return 'Next: generate prompts in Prompt population.'
-  if (!botNodes.value.length) return 'Run uses the saved Target LLM. Add bot nodes to compare several models sequentially.'
-  return `${botNodes.value.length} bot(s) will run one after another; each run is recorded on its bot node.`
+  if (!botNodes.value.length) return 'Run uses the saved Target LLM. Add a Target LLM node to swap or compare models.'
+  if (botNodes.value.length === 1) return 'Swap the Target LLM node (or load a preset) and run again to reuse this flow.'
+  return `${botNodes.value.length} Target LLMs will run one after another; each run is recorded on its node.`
 })
 
 // ------------------------------------------------------- derived node status
@@ -382,11 +472,23 @@ function restoreLayout(evaluationId: string) {
       edges.value = (saved.edges as Edge[]).filter(
         edge => edge && typeof edge.id === 'string' && ids.has(edge.source) && ids.has(edge.target),
       )
+      ensureTargetLlmNode()
       return
     }
   }
   nodes.value = defaultNodes()
   edges.value = defaultEdges(nodes.value)
+}
+/** Layouts saved before the Target LLM node existed get one wired in. */
+function ensureTargetLlmNode() {
+  if (nodes.value.some(node => node.data.kind === 'llm')) return
+  const target = defaultNodes().find(node => node.id === TARGET_LLM_NODE_ID)!
+  nodes.value = [...nodes.value, target]
+  const ids = new Set(nodes.value.map(node => node.id))
+  const rewired = edges.value.filter(edge => !(edge.source === 'prompts' && edge.target === 'run'))
+  if (ids.has('prompts')) rewired.push({ id: 'edge-prompts', source: 'prompts', target: TARGET_LLM_NODE_ID, style: EDGE_STYLE })
+  if (ids.has('run')) rewired.push({ id: `edge-${TARGET_LLM_NODE_ID}`, source: TARGET_LLM_NODE_ID, target: 'run', style: EDGE_STYLE })
+  edges.value = rewired
 }
 function restoreBots(evaluationId: string) {
   const savedConfigs = readFlowJson(flowStorageKeys.bots(evaluationId), legacyFlowStorageKeys.bots(evaluationId))
@@ -440,12 +542,35 @@ watch([botConfigs, botRuns], schedulePersist, { deep: true })
 onBeforeUnmount(() => persistNow())
 
 // ------------------------------------------------------------------- loading
-async function loadEvaluations() {
+async function loadEvaluation(evaluationId: string | undefined = props.evaluationId) {
+  if (!evaluationId) return
   listError.value = ''
+  projectLoading.value = true
   try {
-    await evaluationStore.fetchEvaluations()
+    const evaluation = await evaluationApi.get(evaluationId)
+    if (evaluationId === props.evaluationId) project.value = evaluation
   } catch (e) {
-    listError.value = formatApiError(e, 'Unable to reach the evaluation API.')
+    if (evaluationId === props.evaluationId) listError.value = formatApiError(e, 'Unable to load this evaluation.')
+  } finally {
+    if (evaluationId === props.evaluationId) projectLoading.value = false
+  }
+}
+
+/**
+ * Bot nodes without a model yet start from the evaluation's saved Target LLM
+ * config, so the flow reflects what the evaluation currently runs against.
+ */
+async function seedBotsFromServer(evaluationId: string) {
+  const unconfigured = Object.entries(botConfigs.value).filter(([, config]) => !config.modelName.trim())
+  if (!unconfigured.length) return
+  try {
+    const saved = await llmConfigApi.fetchConfig(evaluationId)
+    if (evaluationId !== props.evaluationId || !saved?.modelName) return
+    for (const [nodeId, config] of unconfigured) {
+      if (!config.modelName.trim()) botConfigs.value[nodeId] = { ...defaultBotConfig(), ...saved, apiKey: '' }
+    }
+  } catch {
+    // No Target LLM saved yet: keep the defaults.
   }
 }
 
@@ -499,6 +624,7 @@ async function loadProject(evaluationId: string, signal: AbortSignal) {
     runStore.restoreLatestRun(evaluationId, signal),
     loadResponses(evaluationId),
     refreshStaleBotRuns(evaluationId, signal),
+    seedBotsFromServer(evaluationId),
   ])
   if (signal.aborted) return
   promptStore.resumeTracking(evaluationId, signal)
@@ -516,6 +642,8 @@ watch(
     sequenceRunning.value = false
     activeBotId.value = null
     sequenceStep.value = null
+    apiTrace.clear()
+    project.value = null
     if (!evaluationId) {
       nodes.value = defaultNodes()
       edges.value = defaultEdges(nodes.value)
@@ -526,38 +654,57 @@ watch(
     restoreLayout(evaluationId)
     restoreBots(evaluationId)
     syncNodeData()
-    await loadProject(evaluationId, signal)
+    await Promise.all([loadEvaluation(evaluationId), loadProject(evaluationId, signal)])
   },
   { immediate: true },
 )
 
-onMounted(async () => {
-  await loadEvaluations()
+onMounted(() => {
   void personaCatalog.load()
-  // /flow without a project: open the most recent one (same as the old app).
-  if (!props.evaluationId && evaluations.value.length && !unmountSignal.aborted) {
-    void router.replace({ name: 'flow-editor', params: { evaluationId: evaluations.value[0].id } })
-  }
   setTimeout(() => fitView({ padding: 0.15 }), 100)
 })
 
-function selectEvaluation(id: string) {
-  if (id && id !== props.evaluationId) void router.push({ name: 'flow-editor', params: { evaluationId: id } })
+// ---------------------------------------------------------------- canvas ops
+function isValidConnection(connection: Connection) {
+  return connection.source !== connection.target
 }
 
-// ---------------------------------------------------------------- canvas ops
+function removeEdge(edgeId: string) {
+  edges.value = edges.value.filter(edge => edge.id !== edgeId)
+  if (selectedEdgeId.value === edgeId) selectedEdgeId.value = ''
+}
+function selectEdge(edgeId: string) {
+  selectedEdgeId.value = edgeId
+  selectedNodeId.value = ''
+}
+/** Delete/Backspace removes the selected connection only; nodes are deleted from the inspector. */
+function onEdgeDeleteKey(event: KeyboardEvent) {
+  if (event.key !== 'Delete' && event.key !== 'Backspace') return
+  if (!selectedEdgeId.value) return
+  const target = event.target as HTMLElement | null
+  if (target?.closest('input, textarea, select, [contenteditable="true"]')) return
+  event.preventDefault()
+  removeEdge(selectedEdgeId.value)
+}
+onMounted(() => window.addEventListener('keydown', onEdgeDeleteKey))
+onBeforeUnmount(() => window.removeEventListener('keydown', onEdgeDeleteKey))
+
 function onConnect(connection: Connection) {
-  edges.value = addEdge({ ...connection, id: `edge-${crypto.randomUUID()}`, style: EDGE_STYLE }, edges.value) as Edge[]
+  // addEdge pushes into the array it is given; pass a copy so the shallowRef sees a new array.
+  edges.value = addEdge({ ...connection, id: `edge-${crypto.randomUUID()}`, style: EDGE_STYLE }, [...edges.value]) as Edge[]
 }
 function addNode(kind: 'prompts' | 'llm' | 'run') {
   const labels: Record<typeof kind, [string, string]> = {
     prompts: ['Prompt population', 'Generate test prompts'],
-    llm: ['Bot', 'Configure this bot endpoint'],
+    llm: ['Target LLM', 'Another model to compare'],
     run: ['Run evaluation', 'Execute the evaluation'],
   }
   const [title, subtitle] = labels[kind]
   const id = `${kind}-${crypto.randomUUID().slice(0, 6)}`
-  if (kind === 'llm') botConfigs.value[id] = defaultBotConfig()
+  if (kind === 'llm') {
+    botConfigs.value[id] = defaultBotConfig()
+    if (props.evaluationId) void seedBotsFromServer(props.evaluationId)
+  }
   nodes.value = [
     ...nodes.value,
     { id, type: 'workflow', position: { x: 440, y: 430 + Math.random() * 100 }, data: { title, subtitle, kind, status: 'ready' } },
@@ -568,9 +715,10 @@ function addNode(kind: 'prompts' | 'llm' | 'run') {
 function resetLayout() {
   nodes.value = defaultNodes()
   edges.value = defaultEdges(nodes.value)
-  botConfigs.value = {}
+  botConfigs.value = { [TARGET_LLM_NODE_ID]: defaultBotConfig() }
   botRuns.value = {}
   selectedNodeId.value = 'evaluation'
+  if (props.evaluationId) void seedBotsFromServer(props.evaluationId)
   syncNodeData()
   setTimeout(() => fitView({ padding: 0.15 }), 50)
 }
@@ -591,17 +739,36 @@ async function generatePrompts() {
   if (!evaluationId) return
   if (!promptModel.value.trim()) return ElMessage.warning('Enter the prompt generation model.')
   const targetAttribute = personaTargetAttribute.value
+  const picking = personaSource.value === 'pick'
+  if (picking && !targetAttribute) return ElMessage.warning('Choose a fairness label first.')
+  if (picking && !pickedPersonaIds.value.length) return ElMessage.warning('Choose at least one persona.')
   const config: PromptGenerationConfig = {
     provider: promptProvider.value,
     modelName: promptModel.value.trim(),
     promptCount: promptCount.value,
     temperature: promptTemperature.value,
-    ...(targetAttribute
+    ...(picking
+      ? {
+          persona: {
+            enabled: true,
+            pool: promptStore.population?.persona?.pool || personaCatalog.pool.value || undefined,
+            selectedAttributes: [targetAttribute],
+            filters: {},
+            stratify: null,
+            seed: personaSeed.value,
+            counterfactualEnabled: isGenderAttribute(targetAttribute),
+            personaIds: [...pickedPersonaIds.value],
+          },
+        }
+      : targetAttribute
       ? {
           persona: {
             enabled: true,
             selectedAttributes: [targetAttribute],
-            filters: {},
+            // Only sample values LangFair has a group for (e.g. Man/Woman).
+            filters: personaCatalog.supportedValues(targetAttribute).length
+              ? { [targetAttribute]: personaCatalog.supportedValues(targetAttribute) }
+              : {},
             stratify: targetAttribute,
             seed: personaSeed.value,
             counterfactualEnabled: isGenderAttribute(targetAttribute),
@@ -624,7 +791,7 @@ watch(
     if (!wasGenerating) return
     if (status === 'completed') {
       ElMessage.success(`Generated ${promptStore.promptCount} prompts.`)
-      void loadEvaluations()
+      void loadEvaluation()
     } else if (status === 'failed') {
       ElMessage.error(promptStore.error || 'Prompt generation failed.')
     }
@@ -642,6 +809,44 @@ function saveBot() {
   persistNow()
   ElMessage.success('Bot saved on the canvas. It is applied to the evaluation when the run reaches this bot.')
 }
+// Reusable Target LLM presets (shared with the step view's Target LLM page).
+const llmPresets = useLlmPresets()
+const botPresets = llmPresets.presets
+const selectedPresetId = ref('')
+watch(selectedNodeId, () => (selectedPresetId.value = ''))
+
+function applyPreset(presetId: string) {
+  const config = selectedBotConfig.value
+  const merged = config && llmPresets.applyTo(presetId, { ...defaultBotConfig(), ...config })
+  if (!config || !merged) return
+  Object.assign(config, merged)
+  ElMessage.success(`Loaded preset "${llmPresets.find(presetId)?.name}". Run the flow again to evaluate this model.`)
+}
+async function savePreset() {
+  const config = selectedBotConfig.value
+  if (!config?.modelName.trim()) return ElMessage.warning('Enter the model name before saving a preset.')
+  const saved = await llmPresets.promptAndSave(botPayload(config))
+  if (!saved) return
+  selectedPresetId.value = saved.id
+  ElMessage.success(`Preset "${saved.name}" saved. It is available in every evaluation (API key not stored).`)
+}
+function deletePreset() {
+  llmPresets.remove(selectedPresetId.value)
+  selectedPresetId.value = ''
+}
+async function loadServerConfig() {
+  const evaluationId = props.evaluationId
+  const config = selectedBotConfig.value
+  if (!evaluationId || !config) return
+  try {
+    const saved = await llmConfigApi.fetchConfig(evaluationId)
+    Object.assign(config, { ...defaultBotConfig(), ...saved, apiKey: '' })
+    ElMessage.success('Loaded the Target LLM currently saved on this evaluation.')
+  } catch (e) {
+    ElMessage.error(formatApiError(e, 'No Target LLM is saved on this evaluation yet.'))
+  }
+}
+
 async function ensureNoActiveRun(evaluationId: string, signal: AbortSignal) {
   runStore.ensureEvaluation(evaluationId)
   const latest = await runStore.restoreLatestRun(evaluationId, signal)
@@ -721,8 +926,10 @@ function recordBotRun(nodeId: string, run: RunStatus, modelName: string) {
   }
 }
 
-async function startAndWait(evaluationId: string, signal: AbortSignal, bot?: { id: string; modelName: string }) {
-  const started = await runStore.startRun(evaluationId, signal)
+async function startAndWait(evaluationId: string, signal: AbortSignal, bot?: { id: string; title: string; modelName: string }) {
+  // The label names the run in the run history (which node / model ran).
+  const label = bot ? `${bot.title} · ${bot.modelName}` : 'Flow run'
+  const started = await runStore.startRun(evaluationId, signal, label)
   if (!started) throw new Error('A run start request is already in flight.')
   if (bot) recordBotRun(bot.id, started, bot.modelName)
   const status = await waitForRun(String(started.id), signal)
@@ -767,7 +974,7 @@ async function executeRun() {
       activeBotId.value = node.id
       sequenceStep.value = { index: index + 1, total: bots.length }
       await llmConfigApi.saveConfig(evaluationId, botPayload(config))
-      const status = await startAndWait(evaluationId, signal, { id: node.id, modelName: config.modelName.trim() })
+      const status = await startAndWait(evaluationId, signal, { id: node.id, title: node.data.title, modelName: config.modelName.trim() })
       if (status === 'failed') {
         throw new Error(`${node.data.title} (${config.modelName}): ${runStore.error || 'run failed'}. Remaining bots were not run.`)
       }
@@ -788,7 +995,7 @@ async function executeRun() {
       sequenceRunning.value = false
       activeBotId.value = null
       sequenceStep.value = null
-      void loadEvaluations()
+      void loadEvaluation(evaluationId)
       void loadResponses(evaluationId)
       // The evaluation's Target LLM now holds the last bot's config.
       if (bots.length && llmStore.currentEvaluationId === evaluationId) {
@@ -859,24 +1066,15 @@ async function confirmDelete() {
       <div class="crumb">
         <router-link to="/">Projects</router-link>
         <span>/</span>
-        <strong>Flow editor</strong>
+        <span class="crumb-project">{{ selectedEvaluation?.name || `Evaluation #${evaluationId}` }}</span>
+        <span>/</span>
+        <strong>Flow</strong>
         <i class="saved-dot" />
         <small>Layout saved locally</small>
       </div>
       <div class="top-actions">
-        <el-select
-          :model-value="evaluationId"
-          placeholder="Select evaluation"
-          filterable
-          :loading="evaluationStore.listLoading"
-          :disabled="sequenceRunning"
-          class="project-select"
-          @update:model-value="selectEvaluation"
-        >
-          <el-option v-for="item in evaluations" :key="item.id" :label="item.name" :value="item.id" />
-        </el-select>
         <el-button v-if="selectedEvaluation" @click="router.push(evaluationPath(selectedEvaluation))">Step view</el-button>
-        <el-button @click="router.push('/evaluations/new')">+ New evaluation</el-button>
+        <el-button @click="router.push({ name: 'run-history', params: { evaluationId } })">Run history</el-button>
         <el-button type="primary" :loading="sequenceRunning" :disabled="!evaluationId || busy" @click="executeRun">
           ▶ Run evaluation
         </el-button>
@@ -884,39 +1082,6 @@ async function confirmDelete() {
     </header>
 
     <div class="workspace">
-      <aside class="left-rail">
-        <div class="project-heading rail-label">
-          <span>PROJECTS · {{ evaluations.length }}</span>
-          <el-button text aria-label="Refresh projects" :loading="evaluationStore.listLoading" @click="loadEvaluations">↻</el-button>
-        </div>
-        <div class="project-list">
-          <button
-            v-for="item in evaluations"
-            :key="item.id"
-            class="project-row"
-            :class="{ selected: evaluationId === item.id }"
-            :disabled="sequenceRunning"
-            @click="selectEvaluation(item.id)"
-          >
-            <strong>{{ item.name }}</strong>
-            <small>{{ item.status.replace(/_/g, ' ') }} · {{ item.promptCount }} prompts</small>
-          </button>
-          <div v-if="evaluationStore.listLoading" class="project-empty">Loading projects…</div>
-          <div v-else-if="!evaluations.length" class="project-empty">No saved projects yet.</div>
-        </div>
-        <div class="rail-label node-label">ADD A STEP</div>
-        <button class="palette-item" title="Add prompt population node" @click="addNode('prompts')">
-          <i class="violet">✳</i><span>Prompt population<small>Generate test inputs</small></span><b>＋</b>
-        </button>
-        <button class="palette-item" title="Add bot node" @click="addNode('llm')">
-          <i class="blue">◉</i><span>Bot<small>Compare another model</small></span><b>＋</b>
-        </button>
-        <button class="palette-item" title="Add run evaluation node" @click="addNode('run')">
-          <i class="amber">↗</i><span>Run evaluation<small>Execute the flow</small></span><b>＋</b>
-        </button>
-        <el-button text class="reset-layout" :disabled="sequenceRunning" @click="resetLayout">Reset layout</el-button>
-      </aside>
-
       <main class="canvas-wrap">
         <div class="canvas-head">
           <div>
@@ -925,6 +1090,17 @@ async function confirmDelete() {
             <p>{{ runHint }}</p>
           </div>
           <div class="canvas-tools">
+            <el-dropdown trigger="click" @command="addNode">
+              <el-button text>＋ Add step</el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="prompts">Prompt population</el-dropdown-item>
+                  <el-dropdown-item command="llm">Target LLM</el-dropdown-item>
+                  <el-dropdown-item command="run">Run evaluation</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+            <el-button text :disabled="sequenceRunning" @click="resetLayout">Reset layout</el-button>
             <el-button text aria-label="Zoom out" @click="zoomOut()">−</el-button>
             <el-button text aria-label="Zoom in" @click="zoomIn()">＋</el-button>
             <el-button text aria-label="Fit workflow" @click="fitView({ padding: 0.15 })">Fit</el-button>
@@ -938,30 +1114,32 @@ async function confirmDelete() {
             :min-zoom="0.25"
             :max-zoom="1.5"
             :delete-key-code="null"
+            :connection-radius="40"
+            :is-valid-connection="isValidConnection"
             @connect="onConnect"
-            @node-click="({ node }) => (selectedNodeId = node.id)"
-            @pane-click="selectedNodeId = ''"
+            @node-click="({ node }) => ((selectedNodeId = node.id), (selectedEdgeId = ''))"
+            @edge-click="({ edge }) => selectEdge(edge.id)"
+            @edge-double-click="({ edge }) => removeEdge(edge.id)"
+            @pane-click="(selectedNodeId = ''), (selectedEdgeId = '')"
           >
             <template #node-workflow="{ id, data, selected }">
               <WorkflowNode :id="id" :data="data" :selected="selected" @inspect="direction => inspectNodeData(id, direction)" />
             </template>
           </VueFlow>
+          <div v-if="selectedEdgeId" class="edge-hint">
+            <span>Connection selected · press Delete or double-click a line to remove it</span>
+            <el-button size="small" type="danger" plain @click="removeEdge(selectedEdgeId)">Delete connection</el-button>
+          </div>
           <div v-if="listError" class="canvas-alert">
             <b>API connection issue</b><span>{{ listError }}</span>
-            <el-button text @click="loadEvaluations">Retry</el-button>
-          </div>
-          <div v-else-if="!evaluations.length && !evaluationStore.listLoading" class="empty-hint">
-            <span>↗</span>
-            <b>Start with an evaluation</b>
-            <small>Create a project, then configure each step.</small>
-            <el-button type="primary" @click="router.push('/evaluations/new')">+ Create evaluation</el-button>
+            <el-button text @click="loadEvaluation()">Retry</el-button>
           </div>
           <div class="canvas-status" :class="{ warn: connectionLost }">
             <span class="online-dot" />
             {{
               connectionLost
                 ? CONNECTION_LOST_MESSAGE
-                : evaluationStore.listLoading
+                : projectLoading
                   ? 'Connecting to API…'
                   : evaluationId
                     ? 'Connected to evaluation API'
@@ -989,22 +1167,13 @@ async function confirmDelete() {
 
           <section v-if="selectedKind === 'evaluation' || selectedKind === 'trigger'" class="config-section">
             <label>PROJECT</label>
-            <el-select
-              :model-value="evaluationId"
-              placeholder="Select a project"
-              filterable
-              :disabled="sequenceRunning"
-              class="full-width"
-              @update:model-value="selectEvaluation"
-            >
-              <el-option v-for="item in evaluations" :key="item.id" :label="item.name" :value="item.id" />
-            </el-select>
             <template v-if="selectedEvaluation">
+              <div class="readout"><span>Name</span><b>{{ selectedEvaluation.name }}</b></div>
               <div class="readout"><span>Task type</span><b>{{ selectedEvaluation.taskType.replace(/_/g, ' ') }}</b></div>
               <div class="readout"><span>Prompt count</span><b>{{ selectedEvaluation.promptCount }}</b></div>
               <div class="readout description"><span>Use case</span><p>{{ selectedEvaluation.useCaseDescription }}</p></div>
             </template>
-            <el-button class="full-width action-button" @click="router.push('/evaluations/new')">+ Create evaluation</el-button>
+            <p class="help-text">This flow belongs to this evaluation only. Open another evaluation's flow from the project list.</p>
           </section>
 
           <section v-else-if="selectedKind === 'prompts'" class="config-section">
@@ -1018,23 +1187,36 @@ async function confirmDelete() {
             <el-input-number v-model="promptCount" :min="1" :max="1000" class="full-width" />
             <label>TEMPERATURE <span class="label-value">{{ promptTemperature.toFixed(1) }}</span></label>
             <el-slider v-model="promptTemperature" :min="0" :max="2" :step="0.1" />
-            <label>TARGET ATTRIBUTE</label>
+            <label>FAIRNESS LABEL (LANGFAIR)</label>
             <el-select
               v-model="personaTargetAttribute"
               clearable
               filterable
               :loading="personaCatalog.loading.value"
-              placeholder="Select diagnostic attribute"
+              placeholder="Gender or race/ethnicity"
               class="full-width"
             >
               <el-option v-for="attribute in personaAttributeOptions" :key="attribute.value" :label="attribute.label" :value="attribute.value" />
             </el-select>
-            <template v-if="personaTargetAttribute">
+            <label>PERSONAS</label>
+            <el-radio-group v-model="personaSource" size="small">
+              <el-radio-button value="pick">Pick personas</el-radio-button>
+              <el-radio-button value="sample">Random sampling</el-radio-button>
+            </el-radio-group>
+            <template v-if="personaSource === 'pick'">
+              <div class="readout"><span>Selected personas</span><b>{{ pickedPersonaIds.length }}</b></div>
+              <el-button class="full-width" @click="personaDialogOpen = true">Choose personas…</el-button>
+            </template>
+            <template v-else-if="personaTargetAttribute">
               <label>PERSONA SEED</label>
               <el-input-number v-model="personaSeed" :min="0" class="full-width" />
             </template>
             <p v-if="personaCatalog.error.value" class="help-text error-text">{{ personaCatalog.error.value }}</p>
-            <p class="help-text">Select a target attribute to generate persona-conditioned prompts for that diagnostic group.</p>
+            <p class="help-text">
+              LangFair supports gender (counterfactual pairs) and race/ethnicity (group comparison).
+              {{ personaSource === 'pick' ? 'Only the personas you choose are used, in turn.' : 'Sampling is limited to values that map onto a LangFair group and stratified across them.' }}
+            </p>
+            <PromptPlanSummary v-if="promptPlanInput" :input="promptPlanInput" />
             <el-alert v-if="promptStore.generationStatus === 'failed' && promptStore.error" type="error" :closable="false" :title="promptStore.error" />
             <el-button
               type="primary"
@@ -1048,6 +1230,24 @@ async function confirmDelete() {
           </section>
 
           <section v-else-if="selectedKind === 'llm' && selectedBotConfig" class="config-section">
+            <label>PRESET</label>
+            <div class="preset-row">
+              <el-select
+                v-model="selectedPresetId"
+                placeholder="Load a saved Target LLM"
+                filterable
+                clearable
+                :disabled="sequenceRunning"
+                @change="(id: string) => id && applyPreset(id)"
+              >
+                <el-option v-for="preset in botPresets" :key="preset.id" :label="preset.name" :value="preset.id" />
+              </el-select>
+              <el-button text type="danger" :disabled="!selectedPresetId" @click="deletePreset">Delete</el-button>
+            </div>
+            <div class="button-row tight">
+              <el-button size="small" :disabled="sequenceRunning" @click="savePreset">Save as preset</el-button>
+              <el-button size="small" :disabled="sequenceRunning || !evaluationId" @click="loadServerConfig">Load saved config</el-button>
+            </div>
             <label>PROVIDER</label>
             <el-select
               v-model="selectedBotConfig.provider"
@@ -1087,9 +1287,10 @@ async function confirmDelete() {
             <label>GENERATIONS PER PROMPT</label>
             <el-input-number v-model="selectedBotConfig.generationsPerPrompt" :min="1" :max="100" class="full-width" />
             <p class="help-text">
-              The evaluation has a single Target LLM config: this bot is written to it right before its run (and by
-              "Test connection"). API keys are kept in memory only and are not saved in the browser; a blank key keeps
-              whatever key the server already stores.
+              The evaluation has a single Target LLM config: this node is written to it right before its run (and by
+              "Test connection"). Swap the model here or load a preset, then run the flow again to reuse it. API keys
+              are kept in memory only and are not saved in the browser; a blank key keeps whatever key the server
+              already stores.
             </p>
             <div v-if="selectedBotRun" class="readout">
               <span>Last run</span>
@@ -1098,7 +1299,7 @@ async function confirmDelete() {
             <p v-if="selectedBotRun?.errorMessage" class="help-text error-text">{{ selectedBotRun.errorMessage }}</p>
             <div class="button-row">
               <el-button :loading="testingConnection" :disabled="busy" @click="testConnection">Test connection</el-button>
-              <el-button type="primary" @click="saveBot">Save bot</el-button>
+              <el-button type="primary" @click="saveBot">Save node</el-button>
             </div>
           </section>
 
@@ -1107,8 +1308,8 @@ async function confirmDelete() {
               <span>↗</span>
               <b>Execute this evaluation</b>
               <p v-if="botNodes.length">
-                {{ botNodes.length }} bot(s) run sequentially: save bot config → start run → wait for completion → next bot.
-                A failed run stops the sequence.
+                {{ botNodes.length }} Target LLM node(s) run sequentially: save config → start run → wait for completion →
+                next node. A failed run stops the sequence.
               </p>
               <p v-else>Uses the evaluation's saved Target LLM and the current prompt population.</p>
             </div>
@@ -1119,7 +1320,7 @@ async function confirmDelete() {
             </template>
             <el-alert v-if="runStore.startError" type="error" :title="runStore.startError" @close="runStore.startError = null" />
             <div v-if="botNodes.length" class="bot-run-list">
-              <label>BOT → RUN</label>
+              <label>TARGET LLM → RUN</label>
               <div v-for="bot in botNodes" :key="bot.id" class="readout">
                 <span>{{ botConfigs[bot.id]?.modelName || bot.data.title }}</span>
                 <b>{{ botRuns[bot.id] ? `#${botRuns[bot.id].runId} · ${botRuns[bot.id].status}` : '—' }}</b>
@@ -1133,6 +1334,9 @@ async function confirmDelete() {
               @click="executeRun"
             >
               ▶ Run evaluation
+            </el-button>
+            <el-button v-if="evaluationId" class="full-width" @click="router.push({ name: 'run-history', params: { evaluationId } })">
+              Compare past runs
             </el-button>
             <el-button v-if="evaluationId" class="full-width" @click="router.push(`/evaluations/${evaluationId}/run`)">Open run page</el-button>
           </section>
@@ -1170,7 +1374,28 @@ async function confirmDelete() {
           </section>
 
           <section class="io-panel">
-            <h3>Node input / output</h3>
+            <h3>API calls <small>{{ selectedNodeCalls.length }} endpoint(s) this session</small></h3>
+            <div v-if="selectedNodeEndpoints.length" class="endpoint-list">
+              <code v-for="endpoint in selectedNodeEndpoints" :key="endpoint">{{ endpoint }}</code>
+            </div>
+            <p v-else class="help-text">This node does not call the API.</p>
+            <details v-for="call in selectedNodeCalls" :key="call.endpoint" class="api-call">
+              <summary>
+                <span class="method" :class="call.method.toLowerCase()">{{ call.method }}</span>
+                <span class="call-url">{{ call.url }}</span>
+                <span class="call-status" :class="{ failed: call.error }">{{ call.status ?? 'ERR' }}</span>
+              </summary>
+              <div class="call-meta">{{ callTime(call) }} · {{ call.durationMs }} ms · called {{ call.count }}×</div>
+              <label>REQUEST</label>
+              <pre>{{ formatData(compactForDisplay(callRequest(call))) }}</pre>
+              <label>RESPONSE</label>
+              <p v-if="call.error" class="help-text error-text">{{ call.error }}</p>
+              <pre>{{ formatData(compactForDisplay(call.responseBody)) }}</pre>
+            </details>
+            <p v-if="selectedNodeEndpoints.length && !selectedNodeCalls.length" class="help-text">
+              No calls recorded yet. Use this node (generate, test connection, run…) to capture its requests and responses.
+            </p>
+            <h3>Data summary</h3>
             <details open><summary>Input</summary><pre>{{ formatData(selectedNodeIo.input) }}</pre></details>
             <details open><summary>Output</summary><pre>{{ formatData(selectedNodeIo.output) }}</pre></details>
           </section>
@@ -1183,6 +1408,18 @@ async function confirmDelete() {
         <footer class="inspector-foot"><span>Node ID</span><code>{{ selectedNode?.id || '—' }}</code></footer>
       </aside>
     </div>
+
+    <el-dialog v-model="personaDialogOpen" title="Choose personas" width="min(1100px, 94vw)">
+      <PersonaPicker
+        v-model:selected="pickedPersonaIds"
+        :pool="promptStore.population?.persona?.pool || personaCatalog.pool.value"
+        :diagnostic-attributes="personaTargetAttribute ? [personaTargetAttribute] : []"
+        @selection-info="info => (pickedPersonaInfo = info)"
+      />
+      <template #footer>
+        <el-button type="primary" @click="personaDialogOpen = false">Done ({{ pickedPersonaIds.length }} selected)</el-button>
+      </template>
+    </el-dialog>
 
     <el-dialog v-model="ioDialog.open" :title="`${ioDialog.nodeTitle} · ${ioDialog.direction.toUpperCase()}`" width="min(760px, 88vw)">
       <pre class="io-dialog-data">{{ formatData(ioDialog.data) }}</pre>
@@ -1210,31 +1447,7 @@ async function confirmDelete() {
 .saved-dot, .online-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; background: #20a879; }
 .top-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .top-actions .el-button + .el-button { margin-left: 0; }
-.project-select { width: 220px; }
-.workspace { flex: 1; min-height: 0; display: grid; grid-template-columns: 218px minmax(0, 1fr) 320px; }
-.left-rail { background: #fff; border-right: 1px solid #e3e7ec; padding: 18px 13px; display: flex; flex-direction: column; gap: 5px; overflow-y: auto; }
-.rail-label { padding: 4px 9px 8px; color: #7b8490; font-size: 9px; font-weight: 700; letter-spacing: .13em; }
-.project-heading { display: flex; align-items: center; justify-content: space-between; padding-right: 3px; }
-.project-heading :deep(.el-button) { padding: 4px; }
-.project-list { display: flex; flex-direction: column; gap: 3px; max-height: 260px; overflow-y: auto; }
-.project-row { display: flex; flex-direction: column; gap: 4px; width: 100%; padding: 8px 9px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: #343b44; text-align: left; cursor: pointer; font: inherit; }
-.project-row:hover { background: #f5f7f9; }
-.project-row:disabled { cursor: not-allowed; opacity: .6; }
-.project-row.selected { border-color: #c9e3da; background: #f2f6f5; }
-.project-row strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; font-weight: 600; }
-.project-row small, .project-empty { color: #7d8895; font-size: 10px; }
-.project-empty { padding: 8px 9px; }
-.node-label { margin-top: 24px; }
-.palette-item { display: flex; align-items: center; gap: 10px; border: 0; background: transparent; color: #343b44; text-align: left; padding: 9px 6px; border-radius: 6px; cursor: pointer; font: inherit; }
-.palette-item:hover { background: #f5f7f9; }
-.palette-item span { font-size: 11px; flex: 1; }
-.palette-item small { display: block; color: #788390; font-size: 10px; margin-top: 4px; }
-.palette-item b { color: #66717e; font-weight: 400; }
-.palette-item i { width: 26px; height: 26px; display: grid; place-items: center; border-radius: 6px; font-style: normal; }
-.violet { background: #efe9ff; color: #7c5ce0; }
-.blue { background: #e6f1fd; color: #2f7fd1; }
-.amber { background: #fff1de; color: #c17a1c; }
-.reset-layout { margin-top: auto; align-self: flex-start; }
+.workspace { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 320px; }
 .canvas-wrap { min-width: 0; display: flex; flex-direction: column; background: #fff; }
 .canvas-head { flex: none; padding: 16px 24px 12px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .eyebrow { font-size: 9px; color: #778391; font-weight: 700; letter-spacing: .13em; }
@@ -1247,11 +1460,10 @@ async function confirmDelete() {
 .canvas-status { position: absolute; bottom: 12px; left: 16px; padding: 7px 10px; border-radius: 5px; background: #fff; border: 1px solid #e5e9ed; color: #67727f; font-size: 10px; display: flex; align-items: center; gap: 7px; }
 .canvas-status.warn { color: #a56912; border-color: #f3d9a8; }
 .canvas-status.warn .online-dot { background: #e6a23c; }
+.edge-hint { position: absolute; z-index: 5; bottom: 12px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 10px; padding: 6px 8px 6px 12px; border: 1px solid #e5e9ed; border-radius: 6px; background: #fff; box-shadow: 0 3px 10px #17202b12; color: #55616d; font-size: 11px; white-space: nowrap; }
+.canvas :deep(.vue-flow__edge.selected .vue-flow__edge-path), .canvas :deep(.vue-flow__edge:hover .vue-flow__edge-path) { stroke: #e05a6a !important; }
+.canvas :deep(.vue-flow__edge) { cursor: pointer; }
 .canvas-alert { position: absolute; z-index: 5; top: 12px; right: 14px; max-width: min(420px, 90%); background: #fdecef; border: 1px solid #f1b9c1; border-radius: 6px; padding: 9px 12px; display: flex; align-items: center; gap: 10px; color: #a3313e; font-size: 11px; }
-.empty-hint { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); display: flex; align-items: center; flex-direction: column; gap: 10px; text-align: center; color: #5d6874; }
-.empty-hint > span { font-size: 24px; color: #20a879; }
-.empty-hint b { font-size: 13px; }
-.empty-hint small { max-width: 260px; color: #7d8996; font-size: 11px; }
 .inspector { background: #fff; border-left: 1px solid #e3e7ec; display: flex; flex-direction: column; min-width: 0; overflow-y: auto; }
 .inspector-head { padding: 18px 18px 14px; border-bottom: 1px solid #e5e9ed; display: flex; justify-content: space-between; align-items: flex-start; }
 .inspector-head h2 { margin: 7px 0 0; font-size: 14px; font-weight: 600; color: #303740; overflow-wrap: anywhere; }
@@ -1298,6 +1510,24 @@ async function confirmDelete() {
 .empty-records { padding: 8px 0; }
 .io-panel { padding: 0 18px 18px; display: flex; flex-direction: column; gap: 8px; }
 .io-panel h3 { margin: 4px 0; color: #414a54; font-size: 11px; }
+.io-panel h3 small { margin-left: 6px; color: #8a949f; font-weight: 400; }
+.endpoint-list { display: flex; flex-direction: column; gap: 3px; }
+.endpoint-list code { font: 9px/1.5 ui-monospace, monospace; color: #55616d; overflow-wrap: anywhere; }
+.api-call summary { display: flex; align-items: center; gap: 6px; text-transform: none; font-weight: 500; }
+.api-call .method { flex: none; font: 700 9px ui-monospace, monospace; color: #2f7fd1; }
+.api-call .method.post { color: #14805f; }
+.api-call .method.put, .api-call .method.patch { color: #a56912; }
+.api-call .method.delete { color: #be3e4b; }
+.call-url { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 9px ui-monospace, monospace; color: #39424d; }
+.call-status { flex: none; font-size: 9px; color: #14805f; }
+.call-status.failed { color: #be3e4b; }
+.call-meta { padding: 0 10px 6px; color: #8a949f; font-size: 9px; }
+.api-call label { display: block; padding: 6px 10px 3px; color: #687481; font-size: 8px; font-weight: 700; letter-spacing: .1em; }
+.api-call .help-text { padding: 0 10px 4px; }
+.preset-row { display: flex; align-items: center; gap: 6px; }
+.preset-row .el-select { flex: 1; }
+.button-row.tight { margin-top: 0; }
+.crumb-project { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #4d5864; }
 .io-panel details { border: 1px solid #e3e7ec; border-radius: 5px; }
 .io-panel summary { padding: 8px 10px; color: #687481; font-size: 10px; font-weight: 700; text-transform: uppercase; cursor: pointer; }
 .io-panel pre, .io-dialog-data { margin: 0; background: #f7f8fa; color: #333b45; white-space: pre-wrap; overflow-wrap: anywhere; overflow: auto; }
@@ -1309,17 +1539,13 @@ async function confirmDelete() {
 .inspector-empty p { font-size: 10px; line-height: 1.5; }
 .inspector-foot { margin-top: auto; padding: 12px 18px; border-top: 1px solid #e5e9ed; display: flex; justify-content: space-between; color: #697582; font-size: 10px; }
 @media (max-width: 1100px) {
-  .workspace { grid-template-columns: 170px minmax(0, 1fr) 280px; }
+  .workspace { grid-template-columns: minmax(0, 1fr) 280px; }
   .crumb { display: none; }
 }
 @media (max-width: 800px) {
   .flow-shell { height: auto; min-height: calc(100vh - 58px); overflow: visible; }
   .toolbar { flex-wrap: wrap; padding: 10px 12px; }
-  .project-select { width: 100%; }
   .workspace { display: flex; flex-direction: column; }
-  .left-rail { flex-direction: row; flex-wrap: wrap; border-right: 0; border-bottom: 1px solid #e3e7ec; padding: 8px; }
-  .project-heading, .project-list, .rail-label, .reset-layout { display: none; }
-  .palette-item small { display: none; }
   .canvas-wrap { height: 60vh; }
   .canvas-head p { display: none; }
   .inspector { border-left: 0; border-top: 1px solid #e3e7ec; }

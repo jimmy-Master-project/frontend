@@ -12,6 +12,7 @@ import type {
   RecommendationItem,
   TaskType,
   EvaluationLanguage,
+  TaskObjective,
 } from "@/types";
 
 export const useEvaluationStore = defineStore("evaluation", () => {
@@ -24,6 +25,7 @@ export const useEvaluationStore = defineStore("evaluation", () => {
   const language = ref<EvaluationLanguage>((import.meta.env.VITE_LANGFAIR_DEFAULT_LANGUAGE || "en") as EvaluationLanguage);
   const classificationLabels = ref<ClassificationLabel[]>([]);
   const recommendationItems = ref<RecommendationItem[]>([]);
+  const taskObjectives = ref<TaskObjective[]>([]);
   const status = ref<EvaluationStatus>("draft");
   const promptCount = ref(0);
 
@@ -39,6 +41,7 @@ export const useEvaluationStore = defineStore("evaluation", () => {
     language.value = evaluation.language;
     classificationLabels.value = evaluation.classificationLabels ?? [];
     recommendationItems.value = evaluation.recommendationItems ?? [];
+    taskObjectives.value = evaluation.taskObjectives ?? [];
     status.value = evaluation.status;
     promptCount.value = evaluation.promptCount;
   }
@@ -122,6 +125,7 @@ export const useEvaluationStore = defineStore("evaluation", () => {
     language.value = (import.meta.env.VITE_LANGFAIR_DEFAULT_LANGUAGE || "en") as EvaluationLanguage;
     classificationLabels.value = [];
     recommendationItems.value = [];
+    taskObjectives.value = [];
     status.value = "draft";
     promptCount.value = 0;
     error.value = null;
@@ -136,6 +140,7 @@ export const useEvaluationStore = defineStore("evaluation", () => {
     language,
     classificationLabels,
     recommendationItems,
+    taskObjectives,
     status,
     promptCount,
     loading,

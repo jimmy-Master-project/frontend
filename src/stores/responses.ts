@@ -40,6 +40,9 @@ export const useResponsesStore = defineStore("responses", () => {
   const model = ref("");
   const promptCount = ref(0);
   const runId = ref<string | null>(null);
+  const runLabel = ref("");
+  // Run picked by the user (null = always the latest run of the evaluation).
+  const selectedRunId = ref<string | null>(null);
   const taskType = ref<TaskType | string>("other");
   const language = ref<LangFairLanguage>("en");
   const classificationLabels = ref<ClassificationLabel[]>([]);
@@ -112,6 +115,14 @@ export const useResponsesStore = defineStore("responses", () => {
     return id;
   }
 
+  /** Show a specific run (null = latest); the caller refetches. */
+  function selectRun(nextRunId: string | number | null) {
+    const next = nextRunId === null || nextRunId === "" ? null : String(nextRunId);
+    if (selectedRunId.value === next) return;
+    selectedRunId.value = next;
+    currentPage.value = 1;
+  }
+
   async function fetchResponses(evaluationId: string | number, signal?: AbortSignal) {
     const id = enterEvaluation(evaluationId);
     const seq = ++responsesSeq;
@@ -126,6 +137,7 @@ export const useResponsesStore = defineStore("responses", () => {
           generationIndex: filters.value.generationIndex ?? undefined,
           page: currentPage.value,
           pageSize: pageSize.value,
+          runId: selectedRunId.value ?? undefined,
         },
         signal,
       );
@@ -138,6 +150,7 @@ export const useResponsesStore = defineStore("responses", () => {
       responses.value = result.items;
       total.value = result.total;
       model.value = result.model;
+      runLabel.value = result.runLabel ?? "";
       promptCount.value = result.promptCount;
       if (runId.value !== nextRunId) resetLangFair();
       runId.value = nextRunId;
@@ -290,6 +303,8 @@ export const useResponsesStore = defineStore("responses", () => {
     model.value = "";
     promptCount.value = 0;
     runId.value = null;
+    runLabel.value = "";
+    selectedRunId.value = null;
     taskType.value = "other";
     language.value = "en";
     classificationLabels.value = [];
@@ -307,6 +322,9 @@ export const useResponsesStore = defineStore("responses", () => {
     model,
     promptCount,
     runId,
+    runLabel,
+    selectedRunId,
+    selectRun,
     taskType,
     language,
     classificationLabels,

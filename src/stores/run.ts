@@ -78,14 +78,14 @@ export const useRunStore = defineStore("run", () => {
 		}
 	}
 
-	async function startRun(nextEvaluationId: string | number, signal?: AbortSignal) {
+	async function startRun(nextEvaluationId: string | number, signal?: AbortSignal, label?: string) {
 		const id = String(nextEvaluationId);
 		ensureEvaluation(id);
 		if (starting.value) return null;
 		starting.value = true;
 		startError.value = null;
 		try {
-			const result = await runApi.startRun(id);
+			const result = await runApi.startRun(id, label);
 			if (!isCurrent(id)) return result;
 			error.value = null;
 			trackResult(result, signal);

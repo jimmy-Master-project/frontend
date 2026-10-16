@@ -13,6 +13,8 @@ export interface FetchResponsesParams {
     generationIndex?: number | null;
     page?: number;
     pageSize?: number;
+    /** A specific run of the evaluation; omitted = the latest run. */
+    runId?: string | number;
 }
 
 export interface FetchResponsesResult {
@@ -21,6 +23,7 @@ export interface FetchResponsesResult {
     model: string;
     promptCount: number;
     runId: string | number | null;
+    runLabel?: string;
     taskType?: TaskType | string;
     language?: LangFairLanguage;
     classificationLabels?: ClassificationLabel[];

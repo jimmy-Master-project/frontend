@@ -6,8 +6,12 @@
         <h2>Fairness Metrics</h2>
         <p>LangFair 指標分析結果會在此頁面獨立呈現。</p>
       </div>
-      <el-button @click="router.push(`/evaluations/${evaluationId}/responses`)">Back to Responses</el-button>
+      <div class="header-actions">
+        <RunExportMenu :run-id="responsesStore.runId" />
+        <el-button @click="router.push({ path: `/evaluations/${evaluationId}/responses`, query: runQuery })">Back to Responses</el-button>
+      </div>
     </div>
+    <RunSelect :evaluation-id="evaluationId" :model-value="responsesStore.selectedRunId" @update:model-value="changeRun" />
 
     <LoadingState v-if="responsesStore.loading" text="Loading evaluation metadata..." />
     <ErrorState v-else-if="responsesStore.error" :message="responsesStore.error" @retry="load" />
@@ -36,6 +40,8 @@ import EvaluationStepper from '@/components/common/EvaluationStepper.vue'
 import ErrorState from '@/components/common/ErrorState.vue'
 import LoadingState from '@/components/common/LoadingState.vue'
 import EvaluationResultSummary from '@/components/responses/EvaluationResultSummary.vue'
+import RunExportMenu from '@/components/run/RunExportMenu.vue'
+import RunSelect from '@/components/run/RunSelect.vue'
 import { useUnmountSignal } from '@/composables/usePolling'
 import { useResponsesStore } from '@/stores/responses'
 import { defaultClassificationMapping } from '@/utils/langfairMetrics'
@@ -46,6 +52,14 @@ const evaluationId = computed(() => String(route.params.evaluationId))
 const unmountSignal = useUnmountSignal()
 const responsesStore = useResponsesStore()
 responsesStore.enterEvaluation(evaluationId.value)
+if (typeof route.query.runId === 'string') responsesStore.selectRun(route.query.runId)
+const runQuery = computed(() => (responsesStore.selectedRunId ? { runId: responsesStore.selectedRunId } : {}))
+
+function changeRun(runId: string | null) {
+  responsesStore.selectRun(runId)
+  void router.replace({ query: runId ? { runId } : {} })
+  void load()
+}
 
 async function load() {
   try {
@@ -78,6 +92,10 @@ onUnmounted(() => responsesStore.stopLangFairPolling())
   justify-content: space-between;
   gap: 16px;
   margin-bottom: 20px;
+}
+.header-actions {
+  display: flex;
+  gap: 12px;
 }
 .page-header h2 {
   margin-bottom: 4px;

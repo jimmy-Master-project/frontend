@@ -92,6 +92,21 @@ export interface PersonaAttribute {
 export interface PersonaCatalog {
 	pool?: string;
 	attributes: PersonaAttribute[];
+	/** The only attributes a fairness label may use (LangFair-supported). */
+	protectedAttributes?: ProtectedAttribute[];
+}
+
+/** A LangFair-supported fairness attribute backed by one persona dimension. */
+export interface ProtectedAttribute {
+	/** Persona dimension key, e.g. gender_identity. */
+	key: string;
+	/** LangFair attribute: "gender" | "race". */
+	attribute: string;
+	label: string;
+	/** Whether counterfactual prompt pairs are generated for it. */
+	counterfactual: boolean;
+	/** LangFair groups and the persona values that map onto each. */
+	groups: Array<{ name: string; values: string[] }>;
 }
 
 export interface PersonaPreview {
@@ -111,6 +126,22 @@ export interface PersonaConfig {
 	/** `null` means "random": a fresh seed is drawn when generating/previewing. */
 	seed: number | null;
 	counterfactualEnabled?: boolean;
+	/** Hand-picked persona ids; when non-empty they replace random sampling. */
+	personaIds?: string[];
+	/** UI only: "pick" while the user is hand-picking personas. */
+	personaSource?: "sample" | "pick";
+
+}
+
+/** One row of GET /persona/personas (browse list). */
+export interface PersonaCard {
+	personaId: string;
+	name: string;
+	source: string;
+	/** A few headline dimensions (data keys). */
+	summary: Record<string, string>;
+	/** Flat "key value …" text of every attribute, for client-side search. */
+	searchText: string;
 }
 
 /** Persona config as stored on a generated population (summary endpoint). */
@@ -223,8 +254,39 @@ export interface RunStatus {
 	heartbeatAt: string | null;
 	/** Generations that failed after retries (completedGenerations counts successes only). */
 	failedGenerations: number;
-	/** Run created outside the normal flow (e.g. benchmark); cannot be resumed. */
+	/** Run created outside the normal flow (e.g. an external bot); cannot be resumed. */
 	external: boolean;
+	startedAt?: string | null;
+	finishedAt?: string | null;
+	/** Name shown in the run history (e.g. the flow node that started it). */
+	label?: string;
+	/** Target LLM settings the run used (empty for runs before history existed). */
+	llmSnapshot?: RunLlmSnapshot;
+	promptPopulationId?: number;
+}
+
+export interface RunLlmSnapshot {
+	provider?: string;
+	modelName?: string;
+	baseUrl?: string;
+	temperature?: number;
+	topP?: number;
+	maxTokens?: number;
+	generationsPerPrompt?: number;
+	external?: boolean;
+}
+
+/** One row of GET /runs/{id}/responses/. */
+export interface RunResponseRecord {
+	id: number;
+	prompt: { id: number; text: string; category: string };
+	generationIndex: number;
+	responseText: string;
+	inputTokens: number | null;
+	outputTokens: number | null;
+	latencyMs: number | null;
+	error: string | null;
+	createdAt: string;
 }
 
 export interface LangFairMetricsResult {
@@ -244,6 +306,17 @@ export interface LangFairMetricsResult {
 	computedAt?: string;
 	excludedResponseCount?: number;
 	language?: string;
+	/** ASCII-letter-ratio check; every suite of the run is refused when false. */
+	languageCheck?: LangFairLanguageCheck;
+}
+
+export interface LangFairLanguageCheck {
+	isEnglish: boolean;
+	method: string;
+	asciiRatioThreshold: number;
+	checkedResponseCount: number;
+	nonEnglishResponseCount: number;
+	nonEnglishResponseIds: Array<number | string>;
 }
 
 export type LangFairComputationStatus = "none" | "running" | "completed" | "failed";

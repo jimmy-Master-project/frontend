@@ -72,9 +72,11 @@ const statusIcon = computed(() => STATUS_ICON[props.data.status ?? 'ready'])
 .node-state.done { color: #24a47b; }
 .node-state.active { color: #c78220; }
 .node-state.error { color: #be3e4b; }
-.port-label { position: absolute; top: 50%; transform: translateY(-50%); z-index: 2; padding: 3px 5px; border: 1px solid #d9dee5; border-radius: 4px; background: #fff; color: #55616d; font-size: 8px; font-weight: 700; letter-spacing: .04em; cursor: pointer; }
+.port-label { position: absolute; top: calc(50% + 12px); z-index: 2; padding: 3px 5px; border: 1px solid #d9dee5; border-radius: 4px; background: #fff; color: #55616d; font-size: 8px; font-weight: 700; letter-spacing: .04em; cursor: pointer; }
 .port-label:hover, .port-label:focus-visible { border-color: var(--node-accent); color: #20252b; outline: none; }
 .port-in { left: -12px; }
 .port-out { right: -12px; }
-.vue-flow__handle { width: 8px; height: 8px; background: var(--node-accent); border: 2px solid #fff; }
+.vue-flow__handle { z-index: 3; width: 14px; height: 14px; background: var(--node-accent); border: 2px solid #fff; box-shadow: 0 0 0 1px var(--node-accent); cursor: crosshair; transition: box-shadow .12s; }
+.vue-flow__handle:hover, .vue-flow__handle.connecting { box-shadow: 0 0 0 4px color-mix(in srgb, var(--node-accent) 35%, transparent); }
+.vue-flow__handle.valid { box-shadow: 0 0 0 3px #24a47b66; }
 </style>

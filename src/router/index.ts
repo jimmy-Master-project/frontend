@@ -44,13 +44,9 @@ const router = createRouter({
       props: true,
     },
     // Visual workflow editor (merged from frontend-node-v). Lazy-loaded so
-    // @vue-flow/core stays out of the main chunk.
-    {
-      path: "/flow",
-      name: "flow-editor-home",
-      component: () => import("../views/FlowEditorView.vue"),
-      meta: { fullWidth: true },
-    },
+    // @vue-flow/core stays out of the main chunk. A flow always belongs to one
+    // evaluation; the old project-less /flow entry goes back to the list.
+    { path: "/flow", redirect: "/" },
     {
       path: "/evaluations/:evaluationId/flow",
       name: "flow-editor",
@@ -59,9 +55,11 @@ const router = createRouter({
       meta: { fullWidth: true },
     },
     {
-      path: "/benchmark-validation",
-      name: "benchmark-validation",
-      component: () => import("../views/BenchmarkValidationView.vue"),
+      path: "/evaluations/:evaluationId/history",
+      name: "run-history",
+      component: () => import("../views/RunHistoryView.vue"),
+      props: true,
+      meta: { wide: true },
     },
   ],
 });
