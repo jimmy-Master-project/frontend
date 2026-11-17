@@ -157,28 +157,11 @@ const promptModel = ref('gpt-4o-mini')
 const promptTemperature = ref(0.8)
 const personaTargetAttribute = ref('')
 const personaSeed = ref(42)
-// Personas: picked one by one (default) or sampled at random.
-const personaSource = ref<'pick' | 'sample'>('pick')
+// Personas: sampled at random (default) or, in special cases, picked one by one.
+const personaSource = ref<'pick' | 'sample'>('sample')
 const pickedPersonaIds = ref<string[]>([])
 const pickedPersonaInfo = ref<PickedPersonaInfo[]>([])
 const personaDialogOpen = ref(false)
-// Start from the people (and label) picked for the latest population, once per population.
-let seededFromPopulation: number | null = null
-watch(
-  () => promptStore.population,
-  population => {
-    const persona = population?.persona
-    if (!population?.populationId || seededFromPopulation === population.populationId) return
-    seededFromPopulation = population.populationId
-    if (persona?.personaIds?.length) {
-      pickedPersonaIds.value = [...persona.personaIds]
-      personaSource.value = 'pick'
-    }
-    const label = persona?.selectedAttributes?.find(key => personaCatalog.protectedFor(key))
-    if (label && !personaTargetAttribute.value) personaTargetAttribute.value = label
-  },
-  { immediate: true },
-)
 // Estimate of what "Generate prompts" will produce (null = no personas used).
 const promptPlanInput = computed<PromptPlanInput | null>(() => {
   const label = personaTargetAttribute.value
@@ -1171,7 +1154,7 @@ async function confirmDelete() {
               <div class="readout"><span>Name</span><b>{{ selectedEvaluation.name }}</b></div>
               <div class="readout"><span>Task type</span><b>{{ selectedEvaluation.taskType.replace(/_/g, ' ') }}</b></div>
               <div class="readout"><span>Prompt count</span><b>{{ selectedEvaluation.promptCount }}</b></div>
-              <div class="readout description"><span>Use case</span><p>{{ selectedEvaluation.useCaseDescription }}</p></div>
+              <div class="readout description"><span>Target LLM</span><p>{{ selectedEvaluation.useCaseDescription }}</p></div>
             </template>
             <p class="help-text">This flow belongs to this evaluation only. Open another evaluation's flow from the project list.</p>
           </section>
@@ -1200,8 +1183,8 @@ async function confirmDelete() {
             </el-select>
             <label>PERSONAS</label>
             <el-radio-group v-model="personaSource" size="small">
-              <el-radio-button value="pick">Pick personas</el-radio-button>
               <el-radio-button value="sample">Random sampling</el-radio-button>
+              <el-radio-button value="pick">Pick personas</el-radio-button>
             </el-radio-group>
             <template v-if="personaSource === 'pick'">
               <div class="readout"><span>Selected personas</span><b>{{ pickedPersonaIds.length }}</b></div>

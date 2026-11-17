@@ -25,6 +25,7 @@ const router = useRouter()
 async function handleSubmit(payload: {
   name: string
   useCaseDescription: string
+  testDirections: string[]
   taskType: TaskType
   language: EvaluationLanguage
   classificationLabels?: ClassificationLabel[]

@@ -1,11 +1,13 @@
 <template>
   <el-form label-position="top">
-    <el-form-item label="Provider">
+    <el-form-item>
+      <template #label><FieldLabel label="Provider" :help="FIELD_HELP.targetProvider" /></template>
       <el-select v-model="form.provider" style="width: 100%" @change="selectProvider">
         <el-option v-for="opt in PROVIDER_OPTIONS" :key="opt.value" :label="opt.label" :value="opt.value" />
       </el-select>
     </el-form-item>
-    <el-form-item label="Model Name">
+    <el-form-item>
+      <template #label><FieldLabel label="Model Name" :help="FIELD_HELP.targetModelName" /></template>
       <ModelNameSelect
         v-model="form.modelName"
         :provider="form.provider"
@@ -15,10 +17,12 @@
         placeholder="gpt-4o-mini"
       />
     </el-form-item>
-    <el-form-item label="Base URL">
+    <el-form-item>
+      <template #label><FieldLabel label="Base URL" :help="FIELD_HELP.baseUrl" /></template>
       <el-input v-model="form.baseUrl" :placeholder="defaultBaseUrl(form.provider)" />
     </el-form-item>
-    <el-form-item v-if="needsApiKey(form.provider)" label="API Key">
+    <el-form-item v-if="needsApiKey(form.provider)">
+      <template #label><FieldLabel label="API Key" :help="FIELD_HELP.apiKey" /></template>
       <el-input v-model="form.apiKey" type="password" show-password placeholder="••••••••••" />
     </el-form-item>
     <el-alert
@@ -29,17 +33,21 @@
       :closable="false"
       class="repeat-help"
     />
-    <el-form-item label="Temperature">
+    <el-form-item>
+      <template #label><FieldLabel label="Temperature" :help="FIELD_HELP.targetTemperature" /></template>
       <el-slider v-model="form.temperature" :min="0" :max="2" :step="0.1" show-input />
     </el-form-item>
-    <el-form-item label="Top P">
+    <el-form-item>
+      <template #label><FieldLabel label="Top P" :help="FIELD_HELP.topP" /></template>
       <el-slider v-model="form.topP" :min="0" :max="1" :step="0.05" show-input />
     </el-form-item>
-    <el-form-item label="Max Tokens">
+    <el-form-item>
+      <template #label><FieldLabel label="Max Tokens" :help="FIELD_HELP.maxTokens" /></template>
       <el-input-number v-model="form.maxTokens" :min="1" style="width: 100%" />
     </el-form-item>
     <el-divider />
-    <el-form-item label="Outputs Per Prompt (k)">
+    <el-form-item>
+      <template #label><FieldLabel label="Outputs Per Prompt (k)" :help="FIELD_HELP.generationsPerPrompt" /></template>
       <div class="repeat-control">
         <el-input-number v-model="form.generationsPerPrompt" :min="1" :max="100" style="width: 100%" />
         <div class="preset-row">
@@ -77,6 +85,8 @@
 </template>
 
 <script setup lang="ts">
+import FieldLabel from '@/components/common/FieldLabel.vue'
+import { FIELD_HELP } from '@/utils/fieldHelp'
 import { reactive, watch } from 'vue'
 
 import ModelNameSelect from './ModelNameSelect.vue'

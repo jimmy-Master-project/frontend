@@ -1,5 +1,5 @@
 import api from "./api";
-import type { PersonaCard, PersonaCatalog, PersonaPreview } from "../types";
+import type { PersonaCard, PersonaCatalog, PersonaPreview, PersonaSet } from "../types";
 
 export interface PersonaSamplePayload {
 	sampleSize: number;
@@ -28,7 +28,32 @@ export interface PersonaListResult {
 	personas: PersonaCard[];
 }
 
+export interface PersonaSetPayload {
+	name: string;
+	sampleSize: number;
+	/** {attribute: allowed values}; empty = the whole pool. */
+	filters: Record<string, string[]>;
+	/** null = random (the backend draws and records a seed). */
+	seed: number | null;
+	pool?: string;
+}
+
 export const personaApi = {
+	listSets() {
+		return api.get<PersonaSet[]>("/persona/sets/").then((res) => res.data);
+	},
+	getSet(id: number) {
+		return api.get<PersonaSet>(`/persona/sets/${id}/`).then((res) => res.data);
+	},
+	/** Samples by the given conditions and saves the result as a named list. */
+	createSet(payload: PersonaSetPayload) {
+		return api
+			.post<PersonaSet>("/persona/sets/", payload, { timeout: 300000 })
+			.then((res) => res.data);
+	},
+	deleteSet(id: number) {
+		return api.delete(`/persona/sets/${id}/`).then(() => undefined);
+	},
 	listPersonas(params: { offset: number; limit: number; pool?: string }) {
 		return api
 			.get<PersonaListResult>("/persona/personas", { params })

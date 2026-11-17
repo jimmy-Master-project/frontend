@@ -1,10 +1,12 @@
 <template>
   <el-dialog v-model="visible" title="Edit Prompt" width="560px">
     <el-form label-position="top">
-      <el-form-item label="Prompt">
+      <el-form-item>
+        <template #label><FieldLabel label="Prompt" :help="FIELD_HELP.promptText" /></template>
         <el-input v-model="form.text" type="textarea" :rows="6" />
       </el-form-item>
-      <el-form-item label="Category">
+      <el-form-item>
+        <template #label><FieldLabel label="Category" :help="FIELD_HELP.promptCategory" /></template>
         <el-input v-model="form.category" />
       </el-form-item>
     </el-form>
@@ -16,6 +18,8 @@
 </template>
 
 <script setup lang="ts">
+import FieldLabel from '@/components/common/FieldLabel.vue'
+import { FIELD_HELP } from '@/utils/fieldHelp'
 import { computed, reactive, watch } from 'vue'
 
 import type { Prompt } from '@/types'

@@ -21,6 +21,7 @@ export const useEvaluationStore = defineStore("evaluation", () => {
   const evaluationId = ref<string | null>(null);
   const name = ref("");
   const useCaseDescription = ref("");
+  const testDirections = ref<string[]>([]);
   const taskType = ref<TaskType>("text_generation");
   const language = ref<EvaluationLanguage>((import.meta.env.VITE_LANGFAIR_DEFAULT_LANGUAGE || "en") as EvaluationLanguage);
   const classificationLabels = ref<ClassificationLabel[]>([]);
@@ -37,6 +38,7 @@ export const useEvaluationStore = defineStore("evaluation", () => {
     evaluationId.value = String(evaluation.id);
     name.value = evaluation.name;
     useCaseDescription.value = evaluation.useCaseDescription;
+    testDirections.value = evaluation.testDirections ?? [];
     taskType.value = evaluation.taskType;
     language.value = evaluation.language;
     classificationLabels.value = evaluation.classificationLabels ?? [];
@@ -108,6 +110,16 @@ export const useEvaluationStore = defineStore("evaluation", () => {
     }
   }
 
+  /** Replace the task objectives (e.g. with directions from the initial prompt agent). */
+  async function setTaskObjectives(objectives: TaskObjective[]) {
+    if (!evaluationId.value) return;
+    const evaluation = await evaluationApi.update(evaluationId.value, {
+      taskObjectives: objectives,
+    });
+    setFromEvaluation(evaluation);
+    return evaluation;
+  }
+
   async function deleteEvaluation(id: string | number) {
     const target = String(id);
     await evaluationApi.remove(target);
@@ -121,6 +133,7 @@ export const useEvaluationStore = defineStore("evaluation", () => {
     evaluationId.value = null;
     name.value = "";
     useCaseDescription.value = "";
+    testDirections.value = [];
     taskType.value = "text_generation";
     language.value = (import.meta.env.VITE_LANGFAIR_DEFAULT_LANGUAGE || "en") as EvaluationLanguage;
     classificationLabels.value = [];
@@ -136,6 +149,7 @@ export const useEvaluationStore = defineStore("evaluation", () => {
     evaluationId,
     name,
     useCaseDescription,
+    testDirections,
     taskType,
     language,
     classificationLabels,
@@ -150,6 +164,7 @@ export const useEvaluationStore = defineStore("evaluation", () => {
     createEvaluation,
     fetchEvaluation,
     updateEvaluation,
+    setTaskObjectives,
     deleteEvaluation,
     reset,
   };

@@ -50,14 +50,15 @@
       <div v-if="failedGenerations" class="detail-row">
         <span>Failed generations</span>
         <span class="failed-count">
-          {{ failedGenerations }} 筆失敗{{ external ? '' : '，可 Resume 重跑' }}
+          {{ failedGenerations }} 筆失敗
         </span>
       </div>
-       <div class="actions">
-         <el-button v-if="!external" type="primary" :loading="starting" :disabled="starting" @click="$emit('resume')">
-           Resume from checkpoint
-         </el-button>
-         <el-button :disabled="starting" @click="$emit('retry')">Start new run</el-button>
+      <p class="status-text">
+        A failed run is not resumed: its responses must all come from one execution. Fix the cause, then start a new
+        run (it sends every prompt again).
+      </p>
+      <div class="actions">
+        <el-button type="primary" :disabled="starting" @click="$emit('retry')">Start new run</el-button>
         <el-button @click="$emit('back-to-llm')">Back to LLM Configuration</el-button>
       </div>
     </template>
@@ -76,7 +77,7 @@
           show-icon
           :closable="false"
           class="completed-warning"
-          :title="`${failedGenerations} 筆 generation 在重試後仍失敗（回應為空）。已完成的 run 無法 Resume；如需補齊請開始新的 run。`"
+          :title="`${failedGenerations} 筆 generation 在重試後仍失敗（回應為空）。如需補齊請開始新的 run（會重新送出全部 prompt）。`"
         />
       </template>
       <div class="actions">
@@ -111,7 +112,6 @@ defineProps<{
 
 defineEmits<{
   retry: []
-  resume: []
   'back-to-llm': []
   'view-responses': []
 }>()

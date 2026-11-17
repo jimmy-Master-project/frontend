@@ -7,7 +7,7 @@
           <span class="value">{{ name }}</span>
         </div>
         <div class="field">
-          <span class="label">Use Case</span>
+          <span class="label">Target LLM</span>
           <span class="value">{{ useCaseDescription }}</span>
         </div>
         <div class="field">
@@ -15,7 +15,7 @@
           <el-tag>{{ taskTypeLabel }}</el-tag>
         </div>
       </div>
-      <el-button @click="$emit('edit')">Edit Use Case</el-button>
+      <el-button @click="$emit('edit')">Edit</el-button>
     </div>
   </el-card>
 </template>

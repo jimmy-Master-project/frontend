@@ -31,23 +31,27 @@
       />
 
       <div class="source-row">
-        <span class="panel-label">Persona source</span>
+        <span class="panel-label"><FieldLabel label="Persona source" :help="FIELD_HELP.personaSource" /></span>
         <el-radio-group v-model="mode">
-          <el-radio-button value="pick">Pick personas</el-radio-button>
           <el-radio-button value="sample">Random sampling</el-radio-button>
+          <el-radio-button value="set">Saved persona list</el-radio-button>
+          <el-radio-button value="pick">Pick personas (special cases)</el-radio-button>
         </el-radio-group>
         <span class="field-help">
           {{
             mode === 'pick'
               ? 'Only the personas you tick are used; they are reused in turn when there are more prompts than personas.'
-              : 'Personas are sampled from the pool using the filters / seed below.'
+              : mode === 'set'
+                ? 'Uses a saved list drawn by your conditions; personas are reused in turn when there are more prompts than personas.'
+                : 'Default. Personas are sampled from the pool using the filters / seed below, so the population is reproducible from its seed.'
           }}
         </span>
       </div>
 
       <div class="top-grid">
         <el-form label-position="top" class="population-form">
-          <el-form-item label="Population Size">
+          <el-form-item>
+            <template #label><FieldLabel label="Population Size" :help="FIELD_HELP.populationSize" /></template>
             <el-input-number
               v-model="populationSize"
               :min="catalog.sampleSizeMin.value"
@@ -61,7 +65,7 @@
         <div class="selected-panel">
           <div class="selected-summary">
             <div>
-              <span class="panel-label">Fairness labels</span>
+              <span class="panel-label"><FieldLabel label="Fairness labels" :help="FIELD_HELP.fairnessLabels" /></span>
               <strong>{{ selectedAttributes.length }}</strong>
             </div>
             <el-button v-if="selectedAttributes.length" text type="primary" @click="clearSelected">Clear all</el-button>
@@ -118,6 +122,20 @@
         />
       </template>
 
+      <template v-else-if="mode === 'set'">
+        <el-divider content-position="left">Persona List</el-divider>
+        <PersonaSetPanel
+          v-model:set-id="personaSetId"
+          :diagnostic-attributes="selectedAttributes"
+          :pool="personaConfig.pool"
+          @personas="ids => (setPersonaIds = ids)"
+        />
+        <p v-if="setPersonaIds.length && setPersonaIds.length !== populationSize" class="field-help">
+          The list has {{ setPersonaIds.length }} personas and Population Size is {{ populationSize }}:
+          {{ setPersonaIds.length > populationSize ? 'only the first ' + populationSize + ' are used.' : 'personas are reused in turn.' }}
+        </p>
+      </template>
+
       <template v-else>
       <PersonaFilterPanel
         v-model:config="personaConfig"
@@ -147,11 +165,14 @@
 </template>
 
 <script setup lang="ts">
+import FieldLabel from '@/components/common/FieldLabel.vue'
+import { FIELD_HELP } from '@/utils/fieldHelp'
 import { Loading } from '@element-plus/icons-vue'
 import { computed, onMounted, ref, watch } from 'vue'
 
 import PersonaFilterPanel from '@/components/prompts/PersonaFilterPanel.vue'
 import PersonaPicker from '@/components/prompts/PersonaPicker.vue'
+import PersonaSetPanel from '@/components/prompts/PersonaSetPanel.vue'
 import PromptPlanSummary from '@/components/prompts/PromptPlanSummary.vue'
 import PersonaPreviewGrid from '@/components/prompts/PersonaPreviewGrid.vue'
 import { freshSeed, isGenderAttribute, usePersonaCatalog } from '@/composables/usePersonaCatalog'
@@ -194,9 +215,12 @@ watch(enabled, value => update({ enabled: value }))
 
 // "pick" = hand-picked persona ids replace random sampling. The ids picked
 // so far are kept while switching back and forth, but only sent in pick mode.
-// Picking people is the default; random sampling is the alternative.
-const mode = ref<'sample' | 'pick'>(personaConfig.value.personaSource === 'sample' ? 'sample' : 'pick')
-const pickedPersonaIds = ref<string[]>([...(personaConfig.value.personaIds ?? [])])
+// Random sampling is the default; picking people is for special cases only.
+const mode = ref<'sample' | 'pick' | 'set'>(personaConfig.value.personaSource ?? 'sample')
+const pickedPersonaIds = ref<string[]>(mode.value === 'pick' ? [...(personaConfig.value.personaIds ?? [])] : [])
+// Saved persona list (mode "set"): its id and persona ids.
+const personaSetId = ref<number | null>(personaConfig.value.personaSetId ?? null)
+const setPersonaIds = ref<string[]>(mode.value === 'set' ? [...(personaConfig.value.personaIds ?? [])] : [])
 const pickedInfo = ref<PickedPersonaInfo[]>([])
 const planInput = computed<PromptPlanInput>(() => ({
   promptCount: populationSize.value,
@@ -206,26 +230,17 @@ const planInput = computed<PromptPlanInput>(() => ({
   picked: mode.value === 'pick' ? pickedInfo.value : null,
 }))
 watch(
-  [mode, pickedPersonaIds],
+  [mode, pickedPersonaIds, personaSetId, setPersonaIds],
   () =>
     update({
       personaSource: mode.value,
-      personaIds: mode.value === 'pick' ? [...pickedPersonaIds.value] : [],
+      personaIds:
+        mode.value === 'pick' ? [...pickedPersonaIds.value] : mode.value === 'set' ? [...setPersonaIds.value] : [],
+      personaSetId: mode.value === 'set' ? personaSetId.value : null,
     }),
   // Immediately, so "pick with nobody chosen" blocks Generate from the start.
   { immediate: true },
 )
-// A restored population config may arrive after mount.
-watch(
-  () => personaConfig.value.personaIds,
-  ids => {
-    if (ids?.length && ids.join() !== pickedPersonaIds.value.join()) {
-      pickedPersonaIds.value = [...ids]
-      mode.value = 'pick'
-    }
-  },
-)
-
 onMounted(loadCatalog)
 
 defineExpose({ previewPopulation })

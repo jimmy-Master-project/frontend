@@ -24,6 +24,7 @@ const router = createRouter({
       name: "target-llm",
       component: () => import("../views/TargetLLMConfigView.vue"),
       props: true,
+      meta: { wide: true },
     },
     {
       path: "/evaluations/:evaluationId/run",

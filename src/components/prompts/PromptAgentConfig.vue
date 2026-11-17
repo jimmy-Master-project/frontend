@@ -6,21 +6,31 @@
 
     <template v-if="generationStatus !== 'completed'">
       <el-form label-position="top">
-        <el-form-item label="Provider">
+        <el-form-item>
+          <template #label><FieldLabel label="Provider" :help="FIELD_HELP.promptAgentProvider" /></template>
           <el-select v-model="form.provider" style="width: 100%">
             <el-option v-for="opt in PROMPT_AGENT_PROVIDER_OPTIONS" :key="opt.value" :label="opt.label" :value="opt.value" />
           </el-select>
         </el-form-item>
-        <el-form-item label="Model">
+        <el-form-item>
+          <template #label><FieldLabel label="Model" :help="FIELD_HELP.promptAgentModel" /></template>
           <el-input v-model="form.modelName" placeholder="Leave blank to use backend .env" />
         </el-form-item>
-        <el-form-item :label="personaEnabled ? 'Population Size' : 'Prompt Count'">
+        <el-form-item>
+          <template #label>
+            <FieldLabel
+              :label="personaEnabled ? 'Population Size' : 'Prompt Count'"
+              :help="personaEnabled ? FIELD_HELP.populationSize : FIELD_HELP.promptCount"
+            />
+          </template>
           <el-input-number v-model="form.promptCount" :min="1" :max="1000" style="width: 100%" />
         </el-form-item>
-        <el-form-item label="Temperature">
+        <el-form-item>
+          <template #label><FieldLabel label="Temperature" :help="FIELD_HELP.promptTemperature" /></template>
           <el-slider v-model="form.temperature" :min="0" :max="2" :step="0.1" show-input />
         </el-form-item>
-        <el-form-item label="Additional Instructions (optional)">
+        <el-form-item>
+          <template #label><FieldLabel label="Additional Instructions (optional)" :help="FIELD_HELP.additionalInstruction" /></template>
           <el-input
             v-model="form.additionalInstruction"
             type="textarea"
@@ -36,6 +46,9 @@
         v-model:config="personaConfig"
         :objective-count="objectiveCount"
       />
+      <el-checkbox v-if="!personaEnabled" v-model="templatePairs" class="template-pairs" data-test="template-pairs">
+        Template gender pairs: send each prompt as “I'm a woman. …” and “I'm a man. …” (baseline without personas)
+      </el-checkbox>
 
       <div v-if="generationStatusIsGenerating" class="generating">
         <el-icon class="is-loading" :size="24"><Loading /></el-icon>
@@ -124,21 +137,31 @@
               class="generation-error"
             />
             <el-form label-position="top">
-              <el-form-item label="Provider">
+              <el-form-item>
+                <template #label><FieldLabel label="Provider" :help="FIELD_HELP.promptAgentProvider" /></template>
                 <el-select v-model="form.provider" style="width: 100%">
                   <el-option v-for="opt in PROMPT_AGENT_PROVIDER_OPTIONS" :key="opt.value" :label="opt.label" :value="opt.value" />
                 </el-select>
               </el-form-item>
-              <el-form-item label="Model">
+              <el-form-item>
+                <template #label><FieldLabel label="Model" :help="FIELD_HELP.promptAgentModel" /></template>
                 <el-input v-model="form.modelName" placeholder="Leave blank to use backend .env" />
               </el-form-item>
-              <el-form-item :label="personaEnabled ? 'Population Size' : 'Prompt Count'">
+              <el-form-item>
+                <template #label>
+                  <FieldLabel
+                    :label="personaEnabled ? 'Population Size' : 'Prompt Count'"
+                    :help="personaEnabled ? FIELD_HELP.populationSize : FIELD_HELP.promptCount"
+                  />
+                </template>
                 <el-input-number v-model="form.promptCount" :min="1" :max="1000" style="width: 100%" />
               </el-form-item>
-              <el-form-item label="Temperature">
+              <el-form-item>
+                <template #label><FieldLabel label="Temperature" :help="FIELD_HELP.promptTemperature" /></template>
                 <el-slider v-model="form.temperature" :min="0" :max="2" :step="0.1" show-input />
               </el-form-item>
-              <el-form-item label="Additional Instructions (optional)">
+              <el-form-item>
+                <template #label><FieldLabel label="Additional Instructions (optional)" :help="FIELD_HELP.additionalInstruction" /></template>
                 <el-input
                   v-model="form.additionalInstruction"
                   type="textarea"
@@ -154,6 +177,9 @@
               v-model:config="personaConfig"
               :objective-count="objectiveCount"
             />
+            <el-checkbox v-if="!personaEnabled" v-model="templatePairs" class="template-pairs">
+              Template gender pairs: send each prompt as “I'm a woman. …” and “I'm a man. …” (baseline without personas)
+            </el-checkbox>
           </el-collapse-item>
         </el-collapse>
 
@@ -185,6 +211,8 @@
 </template>
 
 <script setup lang="ts">
+import FieldLabel from '@/components/common/FieldLabel.vue'
+import { FIELD_HELP } from '@/utils/fieldHelp'
 import { CircleCheckFilled, Loading } from '@element-plus/icons-vue'
 import { computed, reactive, ref, watch } from 'vue'
 
@@ -218,6 +246,8 @@ const emit = defineEmits<{
 
 const form = reactive({ ...props.config })
 const personaEnabled = ref(true)
+// Without personas, pair prompts with "I'm a woman." / "I'm a man." (experiment baseline).
+const templatePairs = ref(false)
 const personaConfig = ref<PersonaConfig>({
   enabled: true,
   pool: '',
@@ -228,31 +258,8 @@ const personaConfig = ref<PersonaConfig>({
   seed: null,
   counterfactualEnabled: true,
 })
-// Reuse the personas hand-picked for the latest population (once per
-// population, so later edits in the form are not overwritten).
-let restoredPopulationId: number | null = null
-watch(
-  () => props.population,
-  population => {
-    const persona = population?.persona
-    if (!population?.populationId || !persona?.personaIds?.length) return
-    if (restoredPopulationId === population.populationId) return
-    restoredPopulationId = population.populationId
-    personaEnabled.value = true
-    personaConfig.value = {
-      ...personaConfig.value,
-      enabled: true,
-      pool: persona.pool || personaConfig.value.pool,
-      selectedAttributes: persona.selectedAttributes?.length
-        ? [...persona.selectedAttributes]
-        : personaConfig.value.selectedAttributes,
-      counterfactualEnabled: persona.counterfactualEnabled ?? personaConfig.value.counterfactualEnabled,
-      personaIds: [...persona.personaIds],
-      personaSource: 'pick',
-    }
-  },
-  { immediate: true },
-)
+// Nothing is carried over from earlier populations: every generation starts
+// from these defaults (random sampling, fresh seed) unless the user changes them.
 // The seed actually sent with the most recent generate/regenerate request.
 const lastUsedSeed = ref<number | null>(null)
 
@@ -265,7 +272,8 @@ const generateDisabled = computed(
     (personaEnabled.value &&
       (personaConfig.value.selectedAttributes.length === 0 ||
         // Pick mode with nothing ticked would silently fall back to sampling.
-        (personaConfig.value.personaSource === 'pick' && !personaConfig.value.personaIds?.length))),
+        ((personaConfig.value.personaSource === 'pick' || personaConfig.value.personaSource === 'set') &&
+          !personaConfig.value.personaIds?.length))),
 )
 const generationStatusIsGenerating = computed(
   () => props.generationStatus === 'generating' || props.generationStatus === 'pending',
@@ -279,8 +287,20 @@ function generationPayload(): PromptGenerationConfig {
   return {
     ...form,
     persona: personaEnabled.value
-      ? { ...personaConfig.value, enabled: true, seed }
+      ? {
+          ...personaConfig.value,
+          enabled: true,
+          seed,
+          // The backend uses any non-empty personaIds instead of sampling, so only
+          // send them when the user explicitly chose "Pick personas".
+          personaIds:
+            personaConfig.value.personaSource === 'pick' || personaConfig.value.personaSource === 'set'
+              ? personaConfig.value.personaIds
+              : [],
+          personaSetId: personaConfig.value.personaSource === 'set' ? personaConfig.value.personaSetId ?? null : null,
+        }
       : { enabled: false, selectedAttributes: [], filters: {}, stratify: null, seed, counterfactualEnabled: false },
+    counterfactualTemplate: !personaEnabled.value && templatePairs.value,
   }
 }
 
@@ -295,6 +315,11 @@ function handleRegenerateConfirm() {
 </script>
 
 <style scoped>
+.template-pairs {
+  margin-top: 12px;
+  white-space: normal;
+  height: auto;
+}
 .generating {
   display: flex;
   align-items: center;

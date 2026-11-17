@@ -2,16 +2,19 @@
   <div class="target-llm-view">
     <EvaluationStepper :active="2" />
     <h2>Target LLM</h2>
-    <p class="description">Configure the model that will receive the generated Prompt Population.</p>
+    <p class="description">
+      Configure the model that will receive a Prompt Population. Saving a different model does not change past runs;
+      each run keeps the population and Target LLM it used.
+    </p>
 
-    <el-alert v-if="pastRuns.length" type="info" :closable="false" show-icon class="form-card">
-      <template #title>
-        This evaluation has {{ pastRuns.length }} run(s); the latest used {{ latestModel }}.
-      </template>
-      Saving a different model here does not change past results. Save, then start a new run to evaluate the new
-      model on the same prompt population, and compare them in
-      <router-link :to="{ name: 'run-history', params: { evaluationId } }">Run history</router-link>.
-    </el-alert>
+    <ExperimentOverview
+      ref="overview"
+      :evaluation-id="evaluationId"
+      :can-run="Boolean(savedModelName)"
+      @use-settings="reuseRunSettings"
+    />
+
+    <h3>Target LLM for the next run</h3>
 
     <LoadingState v-if="loading" text="Loading configuration..." />
     <el-card v-else shadow="never" class="form-card">
@@ -42,6 +45,8 @@
       />
     </el-card>
 
+    <SessionCheckPanel v-if="!loading" :evaluation-id="evaluationId" />
+
     <div class="page-nav">
       <el-button @click="router.push(`/evaluations/${evaluationId}/prompts`)">← Prompt Population</el-button>
       <el-button type="primary" @click="router.push(`/evaluations/${evaluationId}/run`)">
@@ -58,10 +63,11 @@ import { useRoute, useRouter } from 'vue-router'
 
 import EvaluationStepper from '@/components/common/EvaluationStepper.vue'
 import LoadingState from '@/components/common/LoadingState.vue'
+import ExperimentOverview from '@/components/llm/ExperimentOverview.vue'
+import SessionCheckPanel from '@/components/llm/SessionCheckPanel.vue'
 import TargetLLMConfigForm from '@/components/llm/TargetLLMConfigForm.vue'
 import { useLlmPresets } from '@/composables/useLlmPresets'
 import { formatApiError } from '@/services/api'
-import { runApi } from '@/services/runApi'
 import { useLlmConfigStore } from '@/stores/llmConfig'
 import type { LLMConfig, RunStatus } from '@/types'
 
@@ -85,9 +91,30 @@ const configValues = computed<LLMConfig>(() => ({
   generationsPerPrompt: llmStore.generationsPerPrompt,
 }))
 
-// Past runs keep their own Target LLM snapshot; shown so a swap is deliberate.
-const pastRuns = ref<RunStatus[]>([])
-const latestModel = computed(() => pastRuns.value[0]?.llmSnapshot?.modelName || 'an unrecorded model')
+// Past runs keep their own Target LLM snapshot (listed in the overview).
+const overview = ref<InstanceType<typeof ExperimentOverview> | null>(null)
+const pastRuns = computed<RunStatus[]>(() => overview.value?.runs ?? [])
+// Model of the configuration stored on the server ("Run with current LLM" uses it).
+const savedModelName = ref('')
+
+/** Loads a past run's Target LLM settings into the form (API key is never stored). */
+function reuseRunSettings(run: RunStatus) {
+  const snap = run.llmSnapshot
+  if (!snap?.modelName) {
+    ElMessage.warning('This run has no recorded Target LLM settings.')
+    return
+  }
+  Object.assign(llmStore, {
+    provider: snap.provider ?? llmStore.provider,
+    modelName: snap.modelName,
+    baseUrl: snap.baseUrl ?? llmStore.baseUrl,
+    temperature: snap.temperature ?? llmStore.temperature,
+    topP: snap.topP ?? llmStore.topP,
+    maxTokens: snap.maxTokens ?? llmStore.maxTokens,
+    generationsPerPrompt: snap.generationsPerPrompt ?? llmStore.generationsPerPrompt,
+  })
+  ElMessage.info(`Loaded the settings of run #${run.id}. Enter the API key if needed, then save.`)
+}
 
 // Presets shared with the flow editor's Target LLM nodes.
 const llmPresets = useLlmPresets()
@@ -119,9 +146,9 @@ function deletePreset() {
 }
 
 onMounted(async () => {
-  void runApi.listRuns(evaluationId.value).then(runs => (pastRuns.value = runs), () => undefined)
   try {
     await llmStore.fetchConfig(evaluationId.value)
+    savedModelName.value = llmStore.modelName
   } catch {
     // No existing configuration yet; keep the form defaults.
   } finally {
@@ -140,6 +167,7 @@ async function handleSave(config: LLMConfig) {
   llmStore.generationsPerPrompt = config.generationsPerPrompt
   try {
     await llmStore.saveConfig(evaluationId.value)
+    savedModelName.value = llmStore.modelName
     ElMessage.success(pastRuns.value.length ? 'Configuration saved. Start a new run to evaluate this model.' : 'Configuration saved.')
   } catch (e) {
     ElMessage.error(formatApiError(e, 'Failed to save LLM configuration.'))

@@ -2,9 +2,13 @@ import api from "./api";
 import type { RunResponseRecord, RunStatus } from "@/types";
 
 export const runApi = {
-	startRun(evaluationId: string, label?: string) {
+	/** Without `promptPopulationId` the backend uses the latest completed population. */
+	startRun(evaluationId: string, label?: string, promptPopulationId?: number) {
+		const body: { label?: string; promptPopulationId?: number } = {};
+		if (label) body.label = label;
+		if (promptPopulationId) body.promptPopulationId = promptPopulationId;
 		return api
-			.post<RunStatus>(`/evaluations/${evaluationId}/runs/`, label ? { label } : {})
+			.post<RunStatus>(`/evaluations/${evaluationId}/runs/`, body)
 			.then((res) => res.data);
 	},
 	/** Every run of the evaluation, newest first. */
@@ -43,13 +47,6 @@ export const runApi = {
 		return api
 			.get<{ count: number; results: RunResponseRecord[] }>(`/runs/${runId}/responses/`, { signal })
 			.then((res) => res.data.results);
-	},
-	resumeRun(evaluationId: string, runId: string) {
-		return api
-			.post<RunStatus>(`/evaluations/${evaluationId}/runs/`, {
-				resumeRunId: Number(runId),
-			})
-			.then((res) => res.data);
 	},
 	fetchRunStatus(runId: string, signal?: AbortSignal) {
 		return api

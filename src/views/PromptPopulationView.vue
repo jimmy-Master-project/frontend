@@ -13,6 +13,18 @@
         @edit="editDialogVisible = true"
       />
 
+      <TestPlanPanel
+        ref="testPlanPanel"
+        :evaluation-id="evaluationId"
+        :test-directions="evaluationStore.testDirections"
+        :objectives="evaluationStore.taskObjectives"
+        :locked="generating"
+        :saving="objectivesSaving"
+        :has-prompts="promptStore.promptCount > 0"
+        @apply="handleApplyObjectives"
+        @clear="handleClearObjectives"
+      />
+
       <PromptAgentConfig
         :config="agentConfig"
         :generation-status="promptStore.generationStatus"
@@ -36,6 +48,14 @@
         @edit="openEdit"
       />
 
+      <PopulationComparison
+        :evaluation-id="evaluationId"
+        :evaluation-name="evaluationStore.name"
+        :objectives="evaluationStore.taskObjectives"
+        :current-population-id="promptStore.population?.populationId ?? null"
+        :refresh-key="promptStore.generationStatus"
+      />
+
       <div class="page-nav">
         <el-button @click="router.push('/')">Back</el-button>
         <el-button
@@ -48,16 +68,18 @@
       </div>
     </template>
 
-    <el-dialog v-model="editDialogVisible" title="Edit Use Case" width="560px">
+    <el-dialog v-model="editDialogVisible" title="Edit Target LLM and Test Directions" width="560px">
       <EvaluationForm
         :model-value="{
           name: evaluationStore.name,
            useCaseDescription: evaluationStore.useCaseDescription,
+           testDirections: evaluationStore.testDirections,
            taskType: evaluationStore.taskType,
            language: evaluationStore.language,
         }"
         :loading="evaluationStore.loading"
         submit-text="Save"
+        :allow-file="false"
         @submit="handleEditUseCase"
       />
     </el-dialog>
@@ -107,12 +129,21 @@ import PromptAgentConfig from '@/components/prompts/PromptAgentConfig.vue'
 import PromptDetailDialog from '@/components/prompts/PromptDetailDialog.vue'
 import PromptEditDialog from '@/components/prompts/PromptEditDialog.vue'
 import PromptPopulationTable from '@/components/prompts/PromptPopulationTable.vue'
+import PopulationComparison from '@/components/prompts/PopulationComparison.vue'
+import TestPlanPanel from '@/components/prompts/TestPlanPanel.vue'
 import { useUnmountSignal } from '@/composables/usePolling'
 import { formatApiError } from '@/services/api'
 import { useEvaluationStore } from '@/stores/evaluation'
 import { countObjectives } from '@/utils/promptPlan'
 import { usePromptPopulationStore } from '@/stores/promptPopulation'
-import type { EvaluationLanguage, Prompt, PromptGenerationConfig, RegenerateMode, TaskType } from '@/types'
+import type {
+  EvaluationLanguage,
+  Prompt,
+  PromptGenerationConfig,
+  RegenerateMode,
+  TaskObjective,
+  TaskType,
+} from '@/types'
 
 const route = useRoute()
 const router = useRouter()
@@ -179,13 +210,47 @@ function goToTargetLlm() {
   router.push(`/evaluations/${evaluationId.value}/llm`)
 }
 
+const testPlanPanel = ref<InstanceType<typeof TestPlanPanel> | null>(null)
+const objectivesSaving = ref(false)
+
+async function saveObjectives(objectives: TaskObjective[], message: string) {
+  if (generating.value || objectivesSaving.value) return
+  objectivesSaving.value = true
+  try {
+    await evaluationStore.setTaskObjectives(objectives)
+    testPlanPanel.value?.discard()
+    ElMessage.success(message)
+  } catch (e) {
+    ElMessage.error(formatApiError(e, 'Failed to save task objectives.'))
+  } finally {
+    objectivesSaving.value = false
+  }
+}
+
+function handleApplyObjectives(objectives: TaskObjective[]) {
+  return saveObjectives(objectives, `${objectives.length} task objectives saved.`)
+}
+
+function handleClearObjectives() {
+  return saveObjectives([], 'Task objectives cleared.')
+}
+
 const editDialogVisible = ref(false)
 
-async function handleEditUseCase(payload: { name: string; useCaseDescription: string; taskType: TaskType; language: EvaluationLanguage }) {
+async function handleEditUseCase(payload: {
+  name: string
+  useCaseDescription: string
+  testDirections: string[]
+  taskType: TaskType
+  language: EvaluationLanguage
+  taskFile?: File
+}) {
+  // The edit dialog reuses the create form; an uploaded file only applies on create.
+  const { taskFile: _taskFile, ...changes } = payload
   try {
-    await evaluationStore.updateEvaluation(payload)
+    await evaluationStore.updateEvaluation(changes)
     editDialogVisible.value = false
-    ElMessage.success('Use case updated.')
+    ElMessage.success('Evaluation updated.')
   } catch (e) {
     ElMessage.error(formatApiError(e, 'Failed to update use case.'))
   }

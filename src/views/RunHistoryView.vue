@@ -10,6 +10,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import RunExportMenu from '@/components/run/RunExportMenu.vue'
+import RunMetricsComparison from '@/components/run/RunMetricsComparison.vue'
 import { formatApiError, isCanceledError } from '@/services/api'
 import { evaluationApi } from '@/services/evaluationApi'
 import { runApi } from '@/services/runApi'
@@ -69,7 +70,6 @@ watch(
     runs.value = []
     selected.value = []
     compared.value = []
-    responseCache.clear()
     evaluation.value = null
     void evaluationApi.get(evaluationId).then(
       item => evaluationId === props.evaluationId && (evaluation.value = item),
@@ -134,7 +134,6 @@ async function confirmDelete() {
   try {
     await runApi.deleteRun(run.id)
     ElMessage.success(`Run #${run.id} and its responses were deleted.`)
-    responseCache.delete(run.id)
     compared.value = compared.value.filter(item => item.id !== run.id)
     pendingDelete.value = null
     await loadRuns(true)
@@ -154,7 +153,6 @@ const deleteDialogOpen = computed({
 // ---------------------------------------------------------------- compare
 const compared = ref<RunStatus[]>([])
 const comparing = ref(false)
-const responseCache = new Map<number, RunResponseRecord[]>()
 const comparedResponses = ref<Record<number, RunResponseRecord[]>>({})
 const keyword = ref('')
 const categoryFilter = ref('')
@@ -168,10 +166,8 @@ async function compareSelected() {
   try {
     const results = await Promise.all(
       targets.map(async run => {
-        // Finished runs never change; active ones are always refetched.
-        const cached = !ACTIVE.includes(run.status) ? responseCache.get(run.id) : undefined
-        const records = cached ?? (await runApi.fetchRunResponses(run.id, controller.signal))
-        if (!ACTIVE.includes(run.status)) responseCache.set(run.id, records)
+        // Always fetched fresh: responses can be deleted on the results page.
+        const records = await runApi.fetchRunResponses(run.id, controller.signal)
         return [run.id, records] as const
       }),
     )
@@ -256,7 +252,8 @@ const runStats = computed(() =>
         </div>
         <h2>Run history</h2>
         <p class="hint">
-          Every run of this evaluation's flow is kept with the Target LLM it used. Select runs and compare their outputs.
+          Every run of this evaluation's flow is kept with the Target LLM it used. Select runs to compare their fairness
+          metrics and outputs, and export them.
         </p>
       </div>
       <div class="header-actions">
@@ -354,6 +351,10 @@ const runStats = computed(() =>
         <el-table-column prop="avgChars" label="Avg chars" align="right" width="100" />
       </el-table>
 
+      <RunMetricsComparison :runs="compared" :evaluation-id="evaluationId" :evaluation-name="evaluation?.name" />
+
+      <h4 class="outputs-title">Outputs</h4>
+
       <div class="filters">
         <el-input v-model="keyword" placeholder="Search prompts or outputs…" clearable class="search" />
         <el-select v-model="categoryFilter" placeholder="Category" clearable class="category">
@@ -421,6 +422,7 @@ const runStats = computed(() =>
 .failed { color: var(--el-color-danger); font-size: 12px; }
 .compare-bar { display: flex; justify-content: flex-end; align-items: center; gap: 12px; margin-bottom: 24px; }
 .compare h3 { margin: 0 0 12px; }
+.outputs-title { margin: 0 0 12px; }
 .filters { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
 .filters .search { max-width: 300px; }
 .filters .category { width: 180px; }

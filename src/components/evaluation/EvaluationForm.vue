@@ -1,35 +1,58 @@
 <template>
   <el-form ref="formRef" :model="form" :rules="rules" label-position="top" @submit.prevent>
-    <el-form-item label="Project Name" prop="name">
+    <el-form-item prop="name">
+      <template #label><FieldLabel label="Project Name" :help="FIELD_HELP.projectName" /></template>
       <el-input v-model="form.name" placeholder="Resume Screening Evaluation" />
     </el-form-item>
-    <el-form-item v-if="!taskFile" label="Use Case Description" prop="useCaseDescription">
+    <el-form-item prop="useCaseDescription">
+      <template #label><FieldLabel label="Target LLM Description" :help="FIELD_HELP.targetDescription" /></template>
       <el-input
         v-model="form.useCaseDescription"
         type="textarea"
         :rows="4"
-        placeholder="使用 LLM 分析應徵者履歷，並根據工作需求推薦最適合的候選人。"
+        placeholder="Airline customer-service chatbot that answers passengers' questions about bookings, refunds, delays and baggage. Policies: refund within 24h of booking; compensation for delays over 3 hours."
+        data-test="target-description"
       />
+      <div class="field-hint">
+        What the target LLM is for, its service scope and policies. The initial prompt agent reads this as the requirement document.
+      </div>
     </el-form-item>
-    <el-form-item label="Task Objectives File (optional)">
+    <el-form-item prop="testDirectionsText">
+      <template #label><FieldLabel label="Test Directions" :help="FIELD_HELP.testDirections" /></template>
+      <el-input
+        v-model="form.testDirectionsText"
+        type="textarea"
+        :rows="5"
+        :placeholder="'One per line, e.g.\nTest how the bot handles flight delays.\nTest how the bot handles refund requests.\nTest how the bot handles lost baggage.'"
+        data-test="test-directions"
+      />
+      <div class="field-hint">
+        One test direction per line. The initial prompt agent expands each one into specific question directions.
+      </div>
+    </el-form-item>
+    <el-form-item v-if="allowFile">
+      <template #label><FieldLabel label="Test Directions File (optional)" :help="FIELD_HELP.testDirectionsFile" /></template>
       <el-upload :auto-upload="false" :limit="1" accept=".json,.xlsx" :on-change="handleFileChange" :on-remove="() => (taskFile = undefined)">
         <el-button>Choose JSON / Excel</el-button>
-        <template #tip><div class="el-upload__tip">JSON array or XLSX with an objective/task/target column.</div></template>
+        <template #tip><div class="el-upload__tip">JSON array or XLSX with an objective/task/target column; added to the directions above.</div></template>
       </el-upload>
     </el-form-item>
-    <el-form-item label="Task Type" prop="taskType">
+    <el-form-item prop="taskType">
+      <template #label><FieldLabel label="Task Type" :help="FIELD_HELP.taskType" /></template>
       <el-select v-model="form.taskType" placeholder="Select task type" style="width: 100%">
         <el-option v-for="opt in TASK_TYPE_OPTIONS" :key="opt.value" :label="opt.label" :value="opt.value" />
       </el-select>
     </el-form-item>
-    <el-form-item label="Language" prop="language">
+    <el-form-item prop="language">
+      <template #label><FieldLabel label="Language" :help="FIELD_HELP.language" /></template>
       <el-select v-model="form.language" placeholder="Select language" style="width: 100%">
         <el-option label="English" value="en" />
         <el-option label="Auto detect" value="auto" />
       </el-select>
     </el-form-item>
 
-    <el-form-item v-if="form.taskType === 'classification'" label="Binary Classification Labels" prop="classificationLabels">
+    <el-form-item v-if="form.taskType === 'classification'" prop="classificationLabels">
+      <template #label><FieldLabel label="Binary Classification Labels" :help="FIELD_HELP.classificationLabels" /></template>
       <div class="label-list">
         <el-alert
           type="info"
@@ -52,7 +75,8 @@
       </div>
     </el-form-item>
 
-    <el-form-item v-if="form.taskType === 'recommendation'" label="Candidate Items (optional)" prop="recommendationItems">
+    <el-form-item v-if="form.taskType === 'recommendation'" prop="recommendationItems">
+      <template #label><FieldLabel label="Candidate Items (optional)" :help="FIELD_HELP.recommendationItems" /></template>
       <div class="item-list">
         <el-alert
           type="info"
@@ -77,16 +101,20 @@
 </template>
 
 <script setup lang="ts">
+import FieldLabel from '@/components/common/FieldLabel.vue'
+import { FIELD_HELP } from '@/utils/fieldHelp'
 import { reactive, ref, watch } from 'vue'
 import type { FormInstance, FormRules, UploadFile } from 'element-plus'
 
 import { TASK_TYPE_OPTIONS, type ClassificationLabel, type EvaluationLanguage, type RecommendationItem, type TaskType } from '@/types'
+import { parseTestDirections } from '@/utils/testPlan'
 
 const props = withDefaults(
   defineProps<{
     modelValue?: {
       name: string
       useCaseDescription: string
+      testDirections?: string[]
       taskType: TaskType
       language?: EvaluationLanguage
        classificationLabels?: ClassificationLabel[]
@@ -95,9 +123,12 @@ const props = withDefaults(
     }
     loading?: boolean
     submitText?: string
+    /** Show the test directions file upload (create only). */
+    allowFile?: boolean
   }>(),
   {
     loading: false,
+    allowFile: true,
     submitText: 'Create Evaluation',
   },
 )
@@ -107,6 +138,7 @@ const emit = defineEmits<{
     payload: {
       name: string
       useCaseDescription: string
+      testDirections: string[]
       taskType: TaskType
       language: EvaluationLanguage
       classificationLabels?: ClassificationLabel[]
@@ -131,6 +163,7 @@ const defaultClassificationLabels: ClassificationLabel[] = [
 const form = reactive({
   name: props.modelValue?.name ?? '',
   useCaseDescription: props.modelValue?.useCaseDescription ?? '',
+  testDirectionsText: (props.modelValue?.testDirections ?? []).join('\n'),
   taskType: props.modelValue?.taskType ?? ('text_generation' as TaskType),
   language: props.modelValue?.language ?? ((import.meta.env.VITE_LANGFAIR_DEFAULT_LANGUAGE || 'en') as EvaluationLanguage),
   classificationLabels: cloneLabels(props.modelValue?.classificationLabels ?? defaultClassificationLabels),
@@ -143,6 +176,7 @@ watch(
     if (!value) return
     form.name = value.name
     form.useCaseDescription = value.useCaseDescription
+    form.testDirectionsText = (value.testDirections ?? []).join('\n')
     form.taskType = value.taskType
     form.language = value.language ?? ((import.meta.env.VITE_LANGFAIR_DEFAULT_LANGUAGE || 'en') as EvaluationLanguage)
     form.classificationLabels = cloneLabels(value.classificationLabels ?? defaultClassificationLabels)
@@ -153,6 +187,7 @@ watch(
 const rules: FormRules = {
   name: [{ required: true, message: 'Project name is required.', trigger: 'blur' }],
   useCaseDescription: [{ validator: validateUseCaseDescription, trigger: 'blur' }],
+  testDirectionsText: [{ validator: validateTestDirections, trigger: 'blur' }],
   taskType: [{ required: true, message: 'Task type is required.', trigger: 'change' }],
   classificationLabels: [{ validator: validateClassificationLabels, trigger: 'change' }],
   recommendationItems: [{ validator: validateRecommendationItems, trigger: 'change' }],
@@ -188,8 +223,13 @@ function validateClassificationLabels(_rule: unknown, value: ClassificationLabel
 }
 
 function validateUseCaseDescription(_rule: unknown, value: string, callback: (error?: Error) => void) {
-  if (value.trim() || taskFile.value) return callback()
-  callback(new Error('Use case description or a task objectives file is required.'))
+  if (value.trim()) return callback()
+  callback(new Error('Describe the target LLM (its purpose, service scope and policies).'))
+}
+
+function validateTestDirections(_rule: unknown, value: string, callback: (error?: Error) => void) {
+  if (parseTestDirections(value).length || taskFile.value) return callback()
+  callback(new Error('Enter at least one test direction, or upload a test directions file.'))
 }
 
 function validateRecommendationItems(_rule: unknown, value: RecommendationItem[], callback: (error?: Error) => void) {
@@ -209,7 +249,8 @@ async function handleSubmit() {
     if (valid) {
       emit('submit', {
         name: form.name,
-        useCaseDescription: form.useCaseDescription,
+        useCaseDescription: form.useCaseDescription.trim(),
+        testDirections: parseTestDirections(form.testDirectionsText),
         taskType: form.taskType,
         language: form.language,
         classificationLabels: form.taskType === 'classification' ? cloneLabels(form.classificationLabels) : undefined,
@@ -225,6 +266,13 @@ async function handleSubmit() {
 </script>
 
 <style scoped>
+.field-hint {
+  font-size: 12px;
+  line-height: 1.4;
+  margin-top: 4px;
+  color: var(--el-text-color-secondary);
+}
+
 .label-list {
   display: flex;
   flex-direction: column;

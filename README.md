@@ -6,6 +6,24 @@ Vue 3 + TypeScript + Vite frontend for the MVP flow described in [`docs/spec.md`
 Create Evaluation → Prompt Population → Target LLM → Run → Responses
 ```
 
+The Prompt Population page starts with the **Question Directions** panel
+(`src/components/prompts/TestPlanPanel.vue`): the initial prompt agent turns target-LLM information
+(service scope, policies, interaction stages, risk priorities) into identity-neutral question
+directions, which the user reviews, edits and saves as the evaluation's task objectives before
+generating the persona prompt population. Design: `../init-prompt-bot/init_prompt_agent設計.md`.
+
+Experiments are run inside the normal flow: one evaluation is one experiment.
+
+- *Prompt Population page → Population history & comparison* (experiment 1): every population of the
+  evaluation is listed; name each after its condition (G1–G4), select several and compare pairs, pair yield,
+  minimal-edit rate, diversity, distinct-n, planned HELM cells and generation cost; export the comparison and
+  every prompt with empty annotation columns.
+- *Run page*: choose which population (condition) to send when several exist.
+- *Run history page → Compare* (experiment 2): fairness metrics of the selected runs side by side (value,
+  95% CI, flagged), compute missing metrics, export long-format metrics and a run overview as CSV.
+
+The Target LLM page also has a **Session isolation check** (canary test) whose trials can be exported.
+
 ## Stack
 
 - Vue 3 (Composition API) + TypeScript
@@ -29,6 +47,7 @@ Other scripts:
 npm run build       # type-check + production build
 npm run preview     # preview the production build
 npm run type-check  # vue-tsc only
+npm test            # vitest unit + component tests (src/**/__tests__/*.spec.ts)
 ```
 
 ## Project structure

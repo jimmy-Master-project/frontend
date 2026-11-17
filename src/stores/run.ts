@@ -20,9 +20,9 @@ export const useRunStore = defineStore("run", () => {
 	const heartbeatAt = ref<string | null>(null);
 	const failedGenerations = ref(0);
 	const external = ref(false);
-	// Start/resume request in flight; used to disable the buttons.
+	// Start request in flight; used to disable the buttons.
 	const starting = ref(false);
-	// Error from a rejected start/resume request (e.g. 409 "already running",
+	// Error from a rejected start request (e.g. 409 "already running",
 	// 400 validation). Separate from `error`, which is the run's own failure.
 	const startError = ref<string | null>(null);
 
@@ -78,14 +78,19 @@ export const useRunStore = defineStore("run", () => {
 		}
 	}
 
-	async function startRun(nextEvaluationId: string | number, signal?: AbortSignal, label?: string) {
+	async function startRun(
+		nextEvaluationId: string | number,
+		signal?: AbortSignal,
+		label?: string,
+		promptPopulationId?: number,
+	) {
 		const id = String(nextEvaluationId);
 		ensureEvaluation(id);
 		if (starting.value) return null;
 		starting.value = true;
 		startError.value = null;
 		try {
-			const result = await runApi.startRun(id, label);
+			const result = await runApi.startRun(id, label, promptPopulationId);
 			if (!isCurrent(id)) return result;
 			error.value = null;
 			trackResult(result, signal);
@@ -96,35 +101,6 @@ export const useRunStore = defineStore("run", () => {
 			startError.value = formatApiError(e, "Unable to start the evaluation run.");
 			// 409: a run is already pending/running — attach to it. Network
 			// error: the request may or may not have created a run — check.
-			if (apiError.status === 409 || apiError.isNetworkError) {
-				await restoreLatestRun(id, signal);
-			}
-			throw e;
-		} finally {
-			starting.value = false;
-		}
-	}
-
-	async function resumeRun(nextEvaluationId: string | number, signal?: AbortSignal) {
-		const id = String(nextEvaluationId);
-		ensureEvaluation(id);
-		if (!runId.value || status.value !== "failed" || external.value) {
-			startError.value = "Only failed runs started from this evaluation can be resumed.";
-			return null;
-		}
-		if (starting.value) return null;
-		starting.value = true;
-		startError.value = null;
-		try {
-			const result = await runApi.resumeRun(id, runId.value);
-			if (!isCurrent(id)) return result;
-			error.value = null;
-			trackResult(result, signal);
-			return result;
-		} catch (e) {
-			if (!isCurrent(id)) throw e;
-			const apiError = parseApiError(e);
-			startError.value = formatApiError(e, "Unable to resume the evaluation run.");
 			if (apiError.status === 409 || apiError.isNetworkError) {
 				await restoreLatestRun(id, signal);
 			}
@@ -205,7 +181,6 @@ export const useRunStore = defineStore("run", () => {
 		connectionLost,
 		ensureEvaluation,
 		startRun,
-		resumeRun,
 		fetchRunStatus,
 		restoreLatestRun,
 		startPolling,

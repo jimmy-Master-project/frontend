@@ -11,7 +11,7 @@
 
       <div class="advanced-grid">
         <el-card shadow="never" class="option-card">
-          <template #header>Filter personas</template>
+          <template #header><FieldLabel label="Filter personas" :help="FIELD_HELP.filterPersonas" /></template>
           <div v-if="filterableAttributes.length" class="filter-list">
             <div v-for="attribute in filterableAttributes" :key="attribute.key" class="filter-block">
               <div class="filter-label">
@@ -35,7 +35,8 @@
         <el-card shadow="never" class="option-card">
           <template #header>Sampling controls</template>
           <el-form label-position="top">
-            <el-form-item label="Stratified sampling">
+            <el-form-item>
+              <template #label><FieldLabel label="Stratified sampling" :help="FIELD_HELP.stratify" /></template>
               <el-select
                 :model-value="config.stratify ?? ''"
                 style="width: 100%"
@@ -52,7 +53,8 @@
               </el-select>
             </el-form-item>
 
-            <el-form-item label="Counterfactual prompt pairs">
+            <el-form-item>
+              <template #label><FieldLabel label="Counterfactual prompt pairs" :help="FIELD_HELP.counterfactualPairs" /></template>
               <el-switch
                 :model-value="Boolean(config.counterfactualEnabled)"
                 disabled
@@ -63,7 +65,8 @@
               </p>
             </el-form-item>
 
-            <el-form-item label="Sampling Seed">
+            <el-form-item>
+              <template #label><FieldLabel label="Sampling Seed" :help="FIELD_HELP.samplingSeed" /></template>
               <div class="seed-row">
                 <el-switch :model-value="randomSeed" active-text="Random" @update:model-value="toggleRandomSeed" />
                 <el-input-number
@@ -83,7 +86,8 @@
               </p>
             </el-form-item>
 
-            <el-form-item v-if="config.pool" label="Persona Pool">
+            <el-form-item v-if="config.pool">
+              <template #label><FieldLabel label="Persona Pool" :help="FIELD_HELP.personaPool" /></template>
               <el-input :model-value="config.pool" @update:model-value="setPool" />
             </el-form-item>
           </el-form>
@@ -94,6 +98,8 @@
 </template>
 
 <script setup lang="ts">
+import FieldLabel from '@/components/common/FieldLabel.vue'
+import { FIELD_HELP } from '@/utils/fieldHelp'
 import { computed } from 'vue'
 
 import { usePersonaCatalog } from '@/composables/usePersonaCatalog'

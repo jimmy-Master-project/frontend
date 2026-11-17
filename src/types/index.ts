@@ -23,7 +23,7 @@ export type EvaluationStatus =
 	| "completed"
 	| "failed";
 
-export type Provider = "openai" | "evaair" | "virgin" | "priceline";
+export type Provider = "openai" | "evaair" | "virgin" | "finnair" | "chinaairlines" | "malaysia" | "philippine" | "vietjet" | "starlux" | "priceline";
 
 export const PROVIDER_OPTIONS: Array<{ label: string; value: Provider; defaultBaseUrl: string; needsApiKey: boolean }> = [
 	{ label: "OpenAI", value: "openai", defaultBaseUrl: "https://api.openai.com/v1", needsApiKey: true },
@@ -31,6 +31,12 @@ export const PROVIDER_OPTIONS: Array<{ label: string; value: Provider; defaultBa
 	{ label: "EVA Air chatbot", value: "evaair", defaultBaseUrl: "http://127.0.0.1:8768/v1", needsApiKey: false },
 	// Driven through a real browser by the browser-bots service.
 	{ label: "Virgin Atlantic Concierge AI", value: "virgin", defaultBaseUrl: "http://127.0.0.1:8769/virgin/v1", needsApiKey: false },
+	{ label: "Finnair Sisu", value: "finnair", defaultBaseUrl: "http://127.0.0.1:8769/finnair/v1", needsApiKey: false },
+	{ label: "China Airlines AI 客服", value: "chinaairlines", defaultBaseUrl: "http://127.0.0.1:8769/chinaairlines/v1", needsApiKey: false },
+	{ label: "Malaysia Airlines Mavis", value: "malaysia", defaultBaseUrl: "http://127.0.0.1:8769/malaysia/v1", needsApiKey: false },
+	{ label: "Philippine Airlines myPAL", value: "philippine", defaultBaseUrl: "http://127.0.0.1:8769/philippine/v1", needsApiKey: false },
+	{ label: "Vietjet Amy", value: "vietjet", defaultBaseUrl: "http://127.0.0.1:8769/vietjet/v1", needsApiKey: false },
+	{ label: "星宇航空 AI Agent", value: "starlux", defaultBaseUrl: "http://127.0.0.1:8769/starlux/v1", needsApiKey: false },
 	// Priceline Penny HTTP API, wrapped by the priceline-bot service.
 	{ label: "Priceline Penny", value: "priceline", defaultBaseUrl: "http://127.0.0.1:8770/v1", needsApiKey: false },
 ];
@@ -65,11 +71,14 @@ export interface RecommendationItem {
 export interface Evaluation {
 	id: string;
 	name: string;
+	/** Target LLM description: the initial prompt agent's "requirement document". */
 	useCaseDescription: string;
 	taskType: TaskType;
 	language: EvaluationLanguage;
 	classificationLabels?: ClassificationLabel[];
   recommendationItems?: RecommendationItem[];
+  /** User-defined test directions (seed tasks) the initial prompt agent expands. */
+  testDirections?: string[];
   taskObjectives?: TaskObjective[];
 	status: EvaluationStatus;
 	promptCount: number;
@@ -77,7 +86,122 @@ export interface Evaluation {
 }
 
 export interface TaskObjective {
-	 objective: string;
+	objective: string;
+	// Set when the objective came from the initial prompt agent (test plan).
+	// Stored as an internal JSON blob, so the keys stay snake_case.
+	/** The user-defined test direction this objective expands, and its 1-based number. */
+	test_direction?: string;
+	test_direction_index?: number;
+	technique?: TestTechnique;
+	helm_scenario?: HelmScenario;
+	bias_risk?: BiasRisk;
+	why_identity_could_matter?: string;
+	is_control?: boolean;
+}
+
+/* ---------- Initial prompt agent (test plan) ---------- */
+
+export type TestTechnique =
+	| "equivalence_partitioning"
+	| "boundary_value"
+	| "decision_table"
+	| "state_transition"
+	| "combinatorial"
+	| "error_guessing";
+
+export type BiasRisk =
+	| "counterfactual_fairness"
+	| "performance_disparity"
+	| "stereotypical_association"
+	| "control";
+
+export type TestPlanProtectedAttribute = "gender" | "race_ethnicity";
+
+export interface HelmScenario {
+	what: string;
+	who: string;
+	when: string;
+}
+
+export interface TestPlanDirection extends TaskObjective {
+	test_direction: string;
+	test_direction_index: number;
+	technique: TestTechnique;
+	helm_scenario: HelmScenario;
+	bias_risk: BiasRisk;
+	why_identity_could_matter: string;
+	is_control: boolean;
+}
+
+export interface TestPlanTechnique {
+	technique: TestTechnique;
+	rationale: string;
+	/** 1-based numbers of the test directions this technique applies to. */
+	test_directions?: number[];
+	coverage_focus: string[];
+	direction_count: number;
+}
+
+export interface TestPlanRejected {
+	objective?: string;
+	technique: string;
+	reason: string;
+}
+
+/** Coverage of test directions (rows) x HELM "when" stages (columns). */
+export interface TestPlanCoverage {
+	test_directions: string[];
+	when: string[];
+	filled_cells: number;
+	total_cells: number;
+	cell_coverage: number;
+	by_test_direction: number[];
+	uncovered_test_directions: string[];
+	by_technique: Record<string, number>;
+	by_bias_risk: Record<string, number>;
+	control_count: number;
+}
+
+/** Optional extras added to the target LLM description for this plan. */
+export interface TestPlanTargetInfo {
+	knownPolicies: string;
+	systemPromptExcerpt: string;
+	userPopulation: string;
+	riskPriorities: string;
+	/** HELM "when" stages (snake_case); blank uses the airline defaults. */
+	whenStages: string[];
+}
+
+export interface TestPlanRequest {
+	provider?: string;
+	modelName?: string;
+	baseUrl?: string;
+	temperature?: number;
+	targetInfo?: Partial<TestPlanTargetInfo>;
+	protectedAttributes?: TestPlanProtectedAttribute[];
+	totalDirections?: number;
+	apply?: boolean;
+}
+
+export interface TestPlanGapFill {
+	/** Test directions that had no question direction after Step 2. */
+	targeted: string[];
+	/** Objectives added for those test directions. */
+	added: string[];
+}
+
+export interface TestPlan {
+	evaluationId: number;
+	applied: boolean;
+	strategySummary: string;
+	protectedAttributes: TestPlanProtectedAttribute[];
+	targetInfo: Record<string, unknown>;
+	testDirections: string[];
+	techniques: TestPlanTechnique[];
+	directions: TestPlanDirection[];
+	rejected: TestPlanRejected[];
+	coverage: TestPlanCoverage;
+	gapFill?: TestPlanGapFill;
 }
 
 /** GET /persona/attributes item (normalized from the MatrAIx catalog by the backend). */
@@ -128,9 +252,27 @@ export interface PersonaConfig {
 	counterfactualEnabled?: boolean;
 	/** Hand-picked persona ids; when non-empty they replace random sampling. */
 	personaIds?: string[];
-	/** UI only: "pick" while the user is hand-picking personas. */
-	personaSource?: "sample" | "pick";
+	/** UI only: "pick" = hand-picked personas, "set" = a saved persona list. */
+	personaSource?: "sample" | "pick" | "set";
+	/** Saved persona list the personaIds came from (personaSource "set"). */
+	personaSetId?: number | null;
 
+}
+
+/** A saved persona list (GET /persona/sets/). */
+export interface PersonaSet {
+	id: number;
+	name: string;
+	pool: string;
+	/** Conditions it was drawn with; keys are persona attribute names (data). */
+	filters: Record<string, string[]>;
+	requestedSize: number;
+	size: number;
+	seed: number;
+	personaIds: string[];
+	createdAt: string | null;
+	/** Only on detail / create responses. */
+	personas?: PersonaPreview[];
 }
 
 /** One row of GET /persona/personas (browse list). */
@@ -146,6 +288,7 @@ export interface PersonaCard {
 
 /** Persona config as stored on a generated population (summary endpoint). */
 export interface PopulationPersonaConfig extends PersonaConfig {
+	personaSetName?: string;
 	uniquePersonaCount?: number | null;
 	reusedPersonas?: boolean;
 }
@@ -158,6 +301,8 @@ export interface PromptGenerationConfig {
 	temperature: number;
 	additionalInstruction?: string;
 	persona?: PersonaConfig;
+	/** Without personas: pair each prompt as "I'm a woman. …" / "I'm a man. …". */
+	counterfactualTemplate?: boolean;
 }
 
 export interface PromptFairnessMetadata {
@@ -188,6 +333,8 @@ export type RegenerateMode = "replace" | "additional";
 /** GET /evaluations/{id}/prompt-population: the population whose prompts are listed. */
 export interface PromptPopulationSummary {
 	populationId: number | null;
+	/** Experiment condition label (editable), e.g. "G4 Proposed". */
+	name?: string;
 	status: PopulationStatus | null;
 	errorMessage: string;
 	generationModel: string;
@@ -201,6 +348,11 @@ export interface PromptPopulationSummary {
 	stratifiedBy: string | null;
 	seed: number | null;
 	fairness: Record<string, unknown>;
+	/** persona_counterfactual_word_swap, persona_conditioned_generation, template_counterfactual or "" (plain). */
+	generationMode?: string;
+	/** Generation cost; empty for populations generated before it was recorded. */
+	generationStats?: { llmCalls?: number; seconds?: number; startedAt?: string; finishedAt?: string };
+	createdAt?: string | null;
 	/** Newest population still generating (possibly newer than `populationId`). */
 	generatingPopulationId: number | null;
 }
@@ -254,7 +406,7 @@ export interface RunStatus {
 	heartbeatAt: string | null;
 	/** Generations that failed after retries (completedGenerations counts successes only). */
 	failedGenerations: number;
-	/** Run created outside the normal flow (e.g. an external bot); cannot be resumed. */
+	/** Run created outside the normal flow (e.g. an external bot). */
 	external: boolean;
 	startedAt?: string | null;
 	finishedAt?: string | null;
