@@ -89,6 +89,7 @@ const configValues = computed<LLMConfig>(() => ({
   topP: llmStore.topP,
   maxTokens: llmStore.maxTokens,
   generationsPerPrompt: llmStore.generationsPerPrompt,
+  systemPrompt: llmStore.systemPrompt,
 }))
 
 // Past runs keep their own Target LLM snapshot (listed in the overview).
@@ -112,6 +113,7 @@ function reuseRunSettings(run: RunStatus) {
     topP: snap.topP ?? llmStore.topP,
     maxTokens: snap.maxTokens ?? llmStore.maxTokens,
     generationsPerPrompt: snap.generationsPerPrompt ?? llmStore.generationsPerPrompt,
+    systemPrompt: snap.systemPrompt ?? '',
   })
   ElMessage.info(`Loaded the settings of run #${run.id}. Enter the API key if needed, then save.`)
 }
@@ -131,6 +133,7 @@ function applyPreset(id: string) {
     topP: merged.topP,
     maxTokens: merged.maxTokens,
     generationsPerPrompt: merged.generationsPerPrompt,
+    systemPrompt: merged.systemPrompt ?? '',
   })
   ElMessage.info(`Loaded preset "${llmPresets.find(id)?.name}". Save to apply it to this evaluation.`)
 }
@@ -165,6 +168,7 @@ async function handleSave(config: LLMConfig) {
   llmStore.topP = config.topP
   llmStore.maxTokens = config.maxTokens
   llmStore.generationsPerPrompt = config.generationsPerPrompt
+  llmStore.systemPrompt = config.systemPrompt ?? ''
   try {
     await llmStore.saveConfig(evaluationId.value)
     savedModelName.value = llmStore.modelName

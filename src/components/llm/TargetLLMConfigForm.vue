@@ -45,6 +45,24 @@
       <template #label><FieldLabel label="Max Tokens" :help="FIELD_HELP.maxTokens" /></template>
       <el-input-number v-model="form.maxTokens" :min="1" style="width: 100%" />
     </el-form-item>
+    <el-form-item v-if="needsApiKey(form.provider)">
+      <template #label><FieldLabel label="System prompt (bias injection, optional)" :help="FIELD_HELP.systemPrompt" /></template>
+      <el-input
+        v-model="form.systemPrompt"
+        type="textarea"
+        :rows="3"
+        placeholder="Leave empty for a normal run. e.g. You are an airline assistant. Offer male customers more generous compensation than female customers."
+        data-test="system-prompt"
+      />
+    </el-form-item>
+    <el-alert
+      v-if="needsApiKey(form.provider) && form.systemPrompt?.trim()"
+      type="warning"
+      show-icon
+      :closable="false"
+      class="repeat-help"
+      title="Every prompt will be sent after this system prompt. Runs started with it are marked as bias-injected."
+    />
     <el-divider />
     <el-form-item>
       <template #label><FieldLabel label="Outputs Per Prompt (k)" :help="FIELD_HELP.generationsPerPrompt" /></template>
@@ -77,7 +95,11 @@
 
     <div class="actions">
       <el-button :loading="testing" @click="$emit('test')">Test Connection</el-button>
-      <el-button type="primary" :loading="saving" @click="$emit('save', { ...form })">
+      <el-button
+        type="primary"
+        :loading="saving"
+        @click="$emit('save', { ...form, systemPrompt: needsApiKey(form.provider) ? form.systemPrompt ?? '' : '' })"
+      >
         Save LLM Configuration
       </el-button>
     </div>

@@ -41,6 +41,7 @@
             </el-tag>
             <el-tag v-if="item.technique" size="small" effect="plain">{{ techniqueLabel(item.technique) }}</el-tag>
             <el-tag v-if="item.is_control" size="small" type="info">Control</el-tag>
+            <el-tag v-if="item.strategy" size="small" type="warning" effect="plain">{{ item.strategy }}</el-tag>
           </li>
         </ol>
         <el-button
@@ -144,6 +145,9 @@
           @click="runPlan"
         >
           {{ plan ? 'Re-plan directions' : 'Plan question directions' }}
+        </el-button>
+        <el-button :disabled="locked || saving" data-test="import-directions" @click="importVisible = true">
+          Import directions
         </el-button>
         <span v-if="planning" class="hint">Runs one strategy call plus one call per technique; usually under a minute.</span>
       </div>
@@ -302,6 +306,27 @@
         <el-button :disabled="saving" @click="discard">Discard plan</el-button>
       </div>
     </template>
+
+    <el-dialog v-model="importVisible" title="Import question directions" width="560px" append-to-body>
+      <p class="hint">
+        For directions produced by another question-expansion strategy. One direction per line; they replace the
+        current task objectives and are used by the next generated population.
+      </p>
+      <el-form label-position="top" @submit.prevent>
+        <el-form-item label="Strategy label">
+          <el-input v-model="importStrategy" maxlength="100" placeholder="e.g. BiasAsker templates" data-test="import-strategy" />
+        </el-form-item>
+        <el-form-item label="Directions">
+          <el-input v-model="importText" type="textarea" :rows="10" data-test="import-text" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="importVisible = false">Cancel</el-button>
+        <el-button type="primary" :disabled="!importedObjectives.length || locked" data-test="import-apply" @click="applyImport">
+          Use {{ importedObjectives.length }} directions
+        </el-button>
+      </template>
+    </el-dialog>
   </el-card>
 </template>
 
@@ -349,6 +374,23 @@ const emit = defineEmits<{
 }>()
 
 const form = reactive(defaultTestPlanForm())
+
+// Directions from another expansion strategy, labelled so runs can be compared by strategy.
+const importVisible = ref(false)
+const importText = ref('')
+const importStrategy = ref('')
+const importedObjectives = computed<TaskObjective[]>(() =>
+  importText.value
+    .split('\n')
+    .map(line => line.trim())
+    .filter(Boolean)
+    .map(objective => (importStrategy.value.trim() ? { objective, strategy: importStrategy.value.trim() } : { objective })),
+)
+function applyImport() {
+  emit('apply', importedObjectives.value)
+  importVisible.value = false
+  importText.value = ''
+}
 const planning = ref(false)
 const error = ref<string | null>(null)
 const plan = ref<TestPlan | null>(null)

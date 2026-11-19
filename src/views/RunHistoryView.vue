@@ -6,6 +6,7 @@
  */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import { conditionLabel } from '@/utils/runCondition'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
@@ -278,7 +279,8 @@ const runStats = computed(() =>
         <template #default="{ row }">
           <div class="run-name">
             <b>{{ runTitle(row as RunStatus) }}</b>
-            <small>#{{ row.id }}<template v-if="row.promptPopulationId"> · population {{ row.promptPopulationId }}</template></small>
+            <small>#{{ row.id }}</small>
+            <small v-if="row.promptPopulationId">{{ conditionLabel(row as RunStatus) }}</small>
           </div>
         </template>
       </el-table-column>

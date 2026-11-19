@@ -27,6 +27,18 @@
       <el-table-column label="Personas" min-width="150">
         <template #default="{ row }">{{ personaText(row as PromptPopulationSummary) }}</template>
       </el-table-column>
+      <el-table-column label="Directions" width="100">
+        <template #default="{ row }">
+          <el-tooltip
+            v-if="(row as PromptPopulationSummary).taskObjectives?.length"
+            :content="(row as PromptPopulationSummary).taskObjectives!.join(' · ')"
+            placement="top"
+          >
+            <span>{{ (row as PromptPopulationSummary).taskObjectives!.length }}</span>
+          </el-tooltip>
+          <span v-else class="muted">—</span>
+        </template>
+      </el-table-column>
       <el-table-column label="Already run on" min-width="200">
         <template #default="{ row }">
           <el-tag v-for="model in modelsFor((row as PromptPopulationSummary).populationId)" :key="model" size="small" class="tag">
@@ -58,13 +70,18 @@
           <small class="muted"> #{{ (row as RunStatus).id }}</small>
         </template>
       </el-table-column>
-      <el-table-column label="Population" min-width="140">
-        <template #default="{ row }">{{ populationName((row as RunStatus).promptPopulationId) }}</template>
+      <el-table-column label="Condition" min-width="220">
+        <template #default="{ row }">
+          {{ (row as RunStatus).condition ? conditionLabel(row as RunStatus) : populationName((row as RunStatus).promptPopulationId) }}
+        </template>
       </el-table-column>
       <el-table-column label="Target LLM" min-width="180">
         <template #default="{ row }">
           {{ (row as RunStatus).llmSnapshot?.modelName || '—' }}
           <small class="muted">{{ snapshotParams(row as RunStatus) }}</small>
+          <el-tooltip v-if="(row as RunStatus).llmSnapshot?.systemPrompt" :content="(row as RunStatus).llmSnapshot!.systemPrompt" placement="top">
+            <el-tag size="small" type="danger" effect="plain">system prompt</el-tag>
+          </el-tooltip>
         </template>
       </el-table-column>
       <el-table-column label="Status" width="110">
@@ -103,6 +120,7 @@ import { formatApiError } from '@/services/api'
 import { experimentApi } from '@/services/experimentApi'
 import { runApi } from '@/services/runApi'
 import type { PromptPopulationSummary, RunStatus } from '@/types'
+import { conditionLabel } from '@/utils/runCondition'
 
 const props = defineProps<{
   evaluationId: string

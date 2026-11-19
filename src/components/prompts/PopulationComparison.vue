@@ -46,6 +46,25 @@
         </template>
       </el-table-column>
       <el-table-column label="Prompts" prop="generated" width="80" align="right" />
+      <el-table-column label="" width="130" align="right">
+        <template #default="{ row }">
+          <el-tooltip
+            content="Go back to this population's generation step: load all its settings (and optionally its question directions) into the generator above."
+            placement="top"
+          >
+            <el-button
+              size="small"
+              text
+              type="primary"
+              :disabled="!(row as PromptPopulationSummary).generationRequest"
+              :data-test="`load-${row.populationId}`"
+              @click="emit('load-settings', row as PromptPopulationSummary)"
+            >
+              Load settings
+            </el-button>
+          </el-tooltip>
+        </template>
+      </el-table-column>
       <el-table-column label="Status" width="100">
         <template #default="{ row }">
           <el-tag size="small" :type="row.status === 'completed' ? 'success' : row.status === 'failed' ? 'danger' : 'warning'">
@@ -115,6 +134,8 @@ const props = withDefaults(
   }>(),
   { evaluationName: '', objectives: () => [], currentPopulationId: null, refreshKey: null },
 )
+
+const emit = defineEmits<{ (e: 'load-settings', population: PromptPopulationSummary): void }>()
 
 const populations = ref<PromptPopulationSummary[]>([])
 const names = ref<Record<number, string>>({})

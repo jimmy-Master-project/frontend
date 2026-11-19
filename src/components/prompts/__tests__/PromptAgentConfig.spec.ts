@@ -39,3 +39,29 @@ describe('PromptAgentConfig persona source', () => {
     expect(typeof payload.persona?.seed).toBe('number')
   })
 })
+
+describe('PromptAgentConfig load settings', () => {
+  it('reproduces an earlier population and lets the persona switch be the only change', async () => {
+    const wrapper = mount(PromptAgentConfig, {
+      props: { config, generationStatus: 'completed', population: population([]), promptCount: 4 },
+      global: { plugins: [ElementPlus] },
+    })
+    ;(wrapper.vm as unknown as { applySettings: (r: Partial<PromptGenerationConfig>, l: string) => void }).applySettings(
+      {
+        provider: 'openai_compatible', modelName: 'gen-model', promptCount: 7, temperature: 0.3, additionalInstruction: 'short',
+        persona: { enabled: true, selectedAttributes: ['gender_identity'], filters: {}, stratify: null, seed: 123, counterfactualEnabled: true },
+      },
+      'G2 #3',
+    )
+    await flushPromises()
+    await wrapper.find('[data-test="persona-switch"]').findAll('input')[1].setValue(true)
+    await flushPromises()
+    const generate = wrapper.findAll('button').find(button => button.text().includes('Generate New Population'))
+    await generate!.trigger('click')
+
+    const [payload] = wrapper.emitted('generate')![0] as [PromptGenerationConfig]
+    expect(payload).toMatchObject({ modelName: 'gen-model', promptCount: 7, temperature: 0.3, additionalInstruction: 'short' })
+    expect(payload.persona?.enabled).toBe(false)
+    expect(payload.counterfactualTemplate).toBe(true)
+  })
+})

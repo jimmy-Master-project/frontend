@@ -6,7 +6,6 @@
           <span class="header-title">Persona Population</span>
           <p class="header-subtitle">The prompt generator always sees each persona's full attribute set. The fairness labels below are limited to what LangFair supports (gender, race/ethnicity) and only decide which attribute(s) the results are analyzed on.</p>
         </div>
-        <el-switch v-model="enabled" active-text="Use simulated personas" />
       </div>
     </template>
 

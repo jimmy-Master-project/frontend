@@ -91,6 +91,8 @@ export interface TaskObjective {
 	// Stored as an internal JSON blob, so the keys stay snake_case.
 	/** The user-defined test direction this objective expands, and its 1-based number. */
 	test_direction?: string;
+	/** Label of the question-expansion strategy, for imported directions. */
+	strategy?: string;
 	test_direction_index?: number;
 	technique?: TestTechnique;
 	helm_scenario?: HelmScenario;
@@ -303,6 +305,8 @@ export interface PromptGenerationConfig {
 	persona?: PersonaConfig;
 	/** Without personas: pair each prompt as "I'm a woman. …" / "I'm a man. …". */
 	counterfactualTemplate?: boolean;
+	/** Experiment condition label of the new population. */
+	name?: string;
 }
 
 export interface PromptFairnessMetadata {
@@ -353,6 +357,12 @@ export interface PromptPopulationSummary {
 	/** Generation cost; empty for populations generated before it was recorded. */
 	generationStats?: { llmCalls?: number; seconds?: number; startedAt?: string; finishedAt?: string };
 	createdAt?: string | null;
+	/** Request that generated it (null for populations from before this was recorded). */
+	generationRequest?: Partial<PromptGenerationConfig> | null;
+	/** Question directions the evaluation had when it was generated. */
+	taskObjectives?: string[] | null;
+	/** The evaluation's stored objectives at that time (with test-plan details). */
+	taskObjectivesRaw?: TaskObjective[] | null;
 	/** Newest population still generating (possibly newer than `populationId`). */
 	generatingPopulationId: number | null;
 }
@@ -388,6 +398,8 @@ export interface LLMConfig {
 	topP: number;
 	maxTokens: number;
 	generationsPerPrompt: number;
+	/** Optional system message before every prompt (bias injection); empty = none. */
+	systemPrompt?: string;
 }
 
 export type RunState = "idle" | "pending" | "running" | "completed" | "failed";
@@ -415,6 +427,19 @@ export interface RunStatus {
 	/** Target LLM settings the run used (empty for runs before history existed). */
 	llmSnapshot?: RunLlmSnapshot;
 	promptPopulationId?: number;
+	/** Experiment condition of the population this run sent. */
+	condition?: RunCondition;
+}
+
+export interface RunCondition {
+	populationName: string;
+	personaBased: boolean;
+	personaSetName: string;
+	generationMode: string;
+	/** null for populations generated before directions were recorded. */
+	objectiveCount: number | null;
+	/** Strategy labels of imported question directions. */
+	directionStrategies: string[];
 }
 
 export interface RunLlmSnapshot {
@@ -425,6 +450,8 @@ export interface RunLlmSnapshot {
 	topP?: number;
 	maxTokens?: number;
 	generationsPerPrompt?: number;
+	/** Non-empty when the run injected a system prompt (e.g. a planted bias). */
+	systemPrompt?: string;
 	external?: boolean;
 }
 

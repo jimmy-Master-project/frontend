@@ -43,6 +43,7 @@
           <template #header>
             <div class="run-head">{{ runTitle(run) }}</div>
             <div class="muted">{{ run.llmSnapshot?.modelName }}</div>
+            <div class="muted">{{ conditionLabel(run) }}</div>
           </template>
           <template #default="{ row }">
             <template v-if="row.cells[String(run.id)]">
@@ -68,6 +69,7 @@ import { formatApiError } from '@/services/api'
 import { responseApi } from '@/services/responseApi'
 import type { LangFairMetricsResult, RunStatus } from '@/types'
 import { downloadCsv, toCsv } from '@/utils/csv'
+import { conditionLabel } from '@/utils/runCondition'
 import { flaggedCount, pivotRunMetrics } from '@/utils/experimentMetrics'
 
 const props = defineProps<{ runs: RunStatus[]; evaluationId: string; evaluationName?: string }>()
@@ -184,8 +186,21 @@ watch(() => props.runs.map(run => run.id).join(','), () => void loadAll(), { imm
 
 const stamp = () => new Date().toISOString().slice(0, 10)
 
+function conditionColumns(run: RunStatus): (string | number)[] {
+  const condition = run.condition
+  return [
+    condition?.populationName ?? '',
+    condition ? String(condition.personaBased) : '',
+    condition?.generationMode ?? '',
+    condition?.objectiveCount ?? '',
+    condition?.directionStrategies.join('; ') ?? '',
+    run.llmSnapshot?.systemPrompt ?? '',
+  ]
+}
+
 function exportMetrics() {
-  const header = ['run_id', 'run_label', 'evaluation_id', 'provider', 'model', 'population_id', 'computed_at', 'suite',
+  const header = ['run_id', 'run_label', 'evaluation_id', 'provider', 'model', 'population_id', 'population_name',
+    'persona_based', 'generation_mode', 'direction_count', 'direction_strategies', 'system_prompt', 'computed_at', 'suite',
     'metric_key', 'metric', 'value', 'ci', 'verdict', 'rule']
   const csvRows: (string | number)[][] = []
   for (const run of loadedRuns.value) {
@@ -193,7 +208,8 @@ function exportMetrics() {
       const cell = row.cells[String(run.id)]
       if (!cell) continue
       csvRows.push([run.id, run.label ?? '', props.evaluationId, run.llmSnapshot?.provider ?? '',
-        run.llmSnapshot?.modelName ?? '', run.promptPopulationId ?? '', states.value[run.id]?.result?.computedAt ?? '',
+        run.llmSnapshot?.modelName ?? '', run.promptPopulationId ?? '', ...conditionColumns(run),
+        states.value[run.id]?.result?.computedAt ?? '',
         row.suite, row.key, row.label,
         cell.value, cell.ci, cell.verdict, cell.rule])
     }
@@ -203,14 +219,15 @@ function exportMetrics() {
 
 function exportOverview() {
   const header = ['run_id', 'run_label', 'evaluation_id', 'evaluation_name', 'provider', 'model', 'base_url', 'temperature',
-    'generations_per_prompt', 'population_id', 'status', 'total_generations', 'completed_generations',
+    'generations_per_prompt', 'population_id', 'population_name', 'persona_based', 'generation_mode',
+    'direction_count', 'direction_strategies', 'system_prompt', 'status', 'total_generations', 'completed_generations',
     'failed_generations', 'failure_rate', 'started_at', 'finished_at', 'metrics_status', 'flagged_metrics']
   const csvRows = props.runs.map(run => {
     const snapshot = run.llmSnapshot
     const attempted = run.completedGenerations + run.failedGenerations
     return [run.id, run.label ?? '', props.evaluationId, props.evaluationName ?? '', snapshot?.provider ?? '',
       snapshot?.modelName ?? '', snapshot?.baseUrl ?? '', snapshot?.temperature ?? '', snapshot?.generationsPerPrompt ?? '',
-      run.promptPopulationId ?? '', run.status, run.totalGenerations, run.completedGenerations, run.failedGenerations,
+      run.promptPopulationId ?? '', ...conditionColumns(run), run.status, run.totalGenerations, run.completedGenerations, run.failedGenerations,
       attempted ? Math.round((run.failedGenerations / attempted) * 10000) / 10000 : 0, run.startedAt ?? '',
       run.finishedAt ?? '', states.value[run.id]?.status ?? '', flagged.value[run.id] ?? '']
   })

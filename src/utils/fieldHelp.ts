@@ -52,6 +52,12 @@ export const FIELD_HELP = {
     '生成 prompt 時的隨機程度。越高措辭越多樣，越低越一致。',
   additionalInstruction:
     '選填。附加給 prompt 生成模型的額外要求，例如語氣、長度、細節程度。會套用到每一個 prompt。',
+  systemPrompt:
+    '選填。每個 prompt 送出前先送這段 system prompt，用來植入已知偏誤作為正控制組（例如要求對不同性別給不同補償）。留空即一般 run。只適用 API 模型；網頁聊天機器人只接收使用者訊息，不支援。使用的內容會記錄在 run 上。',
+  personaSwitch:
+    '是否用虛擬人生成 prompt。比較「有／無虛擬人」時，先在 Population history 用「Load settings」載入另一份 population 的設定，只切換這個開關再生成，其他條件保持相同。',
+  conditionName:
+    '這份 population 代表的實驗條件名稱（例如 G1 No persona），之後在比較表與 run 中顯示，也可在 Population history 修改。',
   personaSource:
     '虛擬人的來源：\n・Random sampling：依下方篩選與 seed 從虛擬人池隨機抽樣，可用 seed 重現\n・Saved persona list：使用先前依條件抽出並存檔的名單，同一份名單可重複用於多個 population\n・Pick personas：只用你勾選的虛擬人，適合測試特殊案例',
   fairnessLabels:

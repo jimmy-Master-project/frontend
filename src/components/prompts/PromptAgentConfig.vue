@@ -1,212 +1,139 @@
 <template>
   <el-card class="agent-config" shadow="never">
     <template #header>
-      <span>Prompt Population Generator</span>
+      <div class="card-header">
+        <span>Prompt Population Generator</span>
+        <span class="header-note">Every generation creates a new population; earlier ones and their runs are kept.</span>
+      </div>
     </template>
 
-    <template v-if="generationStatus !== 'completed'">
-      <el-form label-position="top">
-        <el-form-item>
-          <template #label><FieldLabel label="Provider" :help="FIELD_HELP.promptAgentProvider" /></template>
-          <el-select v-model="form.provider" style="width: 100%">
-            <el-option v-for="opt in PROMPT_AGENT_PROVIDER_OPTIONS" :key="opt.value" :label="opt.label" :value="opt.value" />
-          </el-select>
-        </el-form-item>
-        <el-form-item>
-          <template #label><FieldLabel label="Model" :help="FIELD_HELP.promptAgentModel" /></template>
-          <el-input v-model="form.modelName" placeholder="Leave blank to use backend .env" />
-        </el-form-item>
-        <el-form-item>
-          <template #label>
-            <FieldLabel
-              :label="personaEnabled ? 'Population Size' : 'Prompt Count'"
-              :help="personaEnabled ? FIELD_HELP.populationSize : FIELD_HELP.promptCount"
-            />
-          </template>
-          <el-input-number v-model="form.promptCount" :min="1" :max="1000" style="width: 100%" />
-        </el-form-item>
-        <el-form-item>
-          <template #label><FieldLabel label="Temperature" :help="FIELD_HELP.promptTemperature" /></template>
-          <el-slider v-model="form.temperature" :min="0" :max="2" :step="0.1" show-input />
-        </el-form-item>
-        <el-form-item>
-          <template #label><FieldLabel label="Additional Instructions (optional)" :help="FIELD_HELP.additionalInstruction" /></template>
-          <el-input
-            v-model="form.additionalInstruction"
-            type="textarea"
-            :rows="3"
-            placeholder="Generate realistic and diverse prompts. Include different wording styles and different levels of detail."
-          />
-        </el-form-item>
-      </el-form>
+    <div v-if="generationStatus === 'completed' && population" class="latest">
+      <el-icon color="var(--el-color-success)"><CircleCheckFilled /></el-icon>
+      Latest: <b>{{ population.name || 'Unnamed' }}</b> #{{ population.populationId }} · {{ promptCount }} prompts ·
+      {{ population.personaBased ? 'with personas' : 'without personas' }} · {{ population.generationModel }}
+    </div>
 
-      <PersonaPopulationSettings
-        v-model:enabled="personaEnabled"
-        v-model:population-size="form.promptCount"
-        v-model:config="personaConfig"
-        :objective-count="objectiveCount"
-      />
-      <el-checkbox v-if="!personaEnabled" v-model="templatePairs" class="template-pairs" data-test="template-pairs">
+    <el-alert
+      v-if="loadedFrom"
+      type="info"
+      show-icon
+      :title="`Settings loaded from ${loadedFrom}. Change only the factor you are testing, then generate.`"
+      class="generation-error"
+      @close="loadedFrom = ''"
+    />
+
+    <el-form label-position="top">
+      <el-form-item>
+        <template #label><FieldLabel label="Simulated personas" :help="FIELD_HELP.personaSwitch" /></template>
+        <el-radio-group v-model="personaEnabled" data-test="persona-switch">
+          <el-radio-button :value="true">Use personas</el-radio-button>
+          <el-radio-button :value="false">No personas</el-radio-button>
+        </el-radio-group>
+      </el-form-item>
+      <el-form-item>
+        <template #label><FieldLabel label="Condition name (optional)" :help="FIELD_HELP.conditionName" /></template>
+        <el-input v-model="conditionName" maxlength="255" placeholder="e.g. G1 No persona" data-test="condition-name" />
+      </el-form-item>
+      <el-form-item>
+        <template #label><FieldLabel label="Provider" :help="FIELD_HELP.promptAgentProvider" /></template>
+        <el-select v-model="form.provider" style="width: 100%">
+          <el-option v-for="opt in PROMPT_AGENT_PROVIDER_OPTIONS" :key="opt.value" :label="opt.label" :value="opt.value" />
+        </el-select>
+      </el-form-item>
+      <el-form-item>
+        <template #label><FieldLabel label="Model" :help="FIELD_HELP.promptAgentModel" /></template>
+        <el-input v-model="form.modelName" placeholder="Leave blank to use backend .env" />
+      </el-form-item>
+      <el-form-item>
+        <template #label>
+          <FieldLabel
+            :label="personaEnabled ? 'Population Size' : 'Prompt Count'"
+            :help="personaEnabled ? FIELD_HELP.populationSize : FIELD_HELP.promptCount"
+          />
+        </template>
+        <el-input-number v-model="form.promptCount" :min="1" :max="1000" style="width: 100%" />
+      </el-form-item>
+      <el-form-item>
+        <template #label><FieldLabel label="Temperature" :help="FIELD_HELP.promptTemperature" /></template>
+        <el-slider v-model="form.temperature" :min="0" :max="2" :step="0.1" show-input />
+      </el-form-item>
+      <el-form-item>
+        <template #label><FieldLabel label="Additional Instructions (optional)" :help="FIELD_HELP.additionalInstruction" /></template>
+        <el-input
+          v-model="form.additionalInstruction"
+          type="textarea"
+          :rows="3"
+          placeholder="Generate realistic and diverse prompts. Include different wording styles and different levels of detail."
+        />
+      </el-form-item>
+    </el-form>
+
+    <PersonaPopulationSettings
+      v-if="personaEnabled"
+      :key="settingsKey"
+      v-model:enabled="personaEnabled"
+      v-model:population-size="form.promptCount"
+      v-model:config="personaConfig"
+      :objective-count="objectiveCount"
+    />
+    <template v-else>
+      <el-checkbox v-model="templatePairs" class="template-pairs" data-test="template-pairs">
         Template gender pairs: send each prompt as “I'm a woman. …” and “I'm a man. …” (baseline without personas)
       </el-checkbox>
-
-      <div v-if="generationStatusIsGenerating" class="generating">
-        <el-icon class="is-loading" :size="24"><Loading /></el-icon>
-        <div>
-          <p class="title">
-            {{ generationStatus === 'pending' ? 'Queued for generation...' : 'Generating Prompt Population...' }}
-          </p>
-          <p class="subtitle">
-            {{ personaEnabled ? `Generating ${form.promptCount} persona-based prompts...` : 'The agent is generating prompts from your use case.' }}
-          </p>
-          <p v-if="personaEnabled && lastUsedSeed !== null" class="subtitle">Sampling seed: {{ lastUsedSeed }}</p>
-        </div>
-      </div>
-
       <el-alert
-        v-if="connectionLost"
+        v-if="!templatePairs"
         type="warning"
         show-icon
         :closable="false"
-        :title="CONNECTION_LOST_MESSAGE"
-        class="generation-error"
+        class="template-pairs"
+        title="Without gender pairs this population has no counterfactual prompts, so gender fairness metrics cannot be computed or compared with a persona condition."
       />
+    </template>
 
-      <el-alert
-        v-if="generationStatus === 'failed'"
-        type="error"
-        show-icon
-        :closable="false"
-        :title="error || 'Prompt generation failed.'"
-        class="generation-error"
-      />
+    <div v-if="generationStatusIsGenerating" class="generating">
+      <el-icon class="is-loading" :size="24"><Loading /></el-icon>
+      <div>
+        <p class="title">
+          {{ generationStatus === 'pending' ? 'Queued for generation...' : 'Generating Prompt Population...' }}
+        </p>
+        <p class="subtitle">
+          {{ personaEnabled ? `Generating ${form.promptCount} persona-based prompts...` : 'The agent is generating prompts from your use case.' }}
+        </p>
+        <p v-if="personaEnabled && lastUsedSeed !== null" class="subtitle">Sampling seed: {{ lastUsedSeed }}</p>
+      </div>
+    </div>
 
+    <el-alert
+      v-if="connectionLost"
+      type="warning"
+      show-icon
+      :closable="false"
+      :title="CONNECTION_LOST_MESSAGE"
+      class="generation-error"
+    />
+
+    <el-alert
+      v-if="generationStatus === 'failed'"
+      type="error"
+      show-icon
+      :closable="false"
+      :title="error || 'Prompt generation failed.'"
+      class="generation-error"
+    />
+
+    <div class="actions">
       <el-button
         type="primary"
         :disabled="generateDisabled"
         :loading="generationStatusIsGenerating"
         @click="handleGenerate"
       >
-        {{ generationStatus === 'failed' ? 'Try Again' : 'Generate Prompt Population' }}
+        {{ generationStatus === 'completed' ? 'Generate New Population' : generationStatus === 'failed' ? 'Try Again' : 'Generate Prompt Population' }}
       </el-button>
       <span v-if="generationStatus === 'failed' && personaEnabled && lastUsedSeed !== null" class="seed-note">
         Last attempt used seed {{ lastUsedSeed }}
       </span>
-    </template>
-
-    <template v-else>
-      <div class="completed">
-        <p class="title">
-          <el-icon color="var(--el-color-success)"><CircleCheckFilled /></el-icon>
-          Prompt Population Generated
-        </p>
-        <p class="subtitle">{{ promptCount }} prompts</p>
-        <div class="stats">
-          <div class="stat">
-            <span class="label">Generation Model</span>
-            <span class="value">{{ population?.generationModel }}</span>
-          </div>
-          <div class="stat">
-            <span class="label">Temperature</span>
-            <span class="value">{{ population?.temperature }}</span>
-          </div>
-          <div class="stat">
-            <span class="label">Requested</span>
-            <span class="value">{{ population?.requested }}</span>
-          </div>
-          <div class="stat">
-            <span class="label">Generated</span>
-            <span class="value">{{ population?.generated }}</span>
-          </div>
-          <div class="stat">
-            <span class="label">Persona-based</span>
-            <span class="value">{{ population?.personaBased ? 'Yes' : 'No' }}</span>
-          </div>
-          <div v-if="population?.personaBased" class="stat">
-            <span class="label">Seed</span>
-            <span class="value">{{ population?.seed ?? '—' }}</span>
-          </div>
-        </div>
-        <el-collapse class="regeneration-settings">
-          <el-collapse-item name="settings" title="Regeneration settings">
-            <el-alert
-              type="info"
-              show-icon
-              :closable="false"
-              title="Adjust these settings before regenerating. Counterfactual prompt pairs are under Persona Population → Advanced sampling options."
-              class="generation-error"
-            />
-            <el-form label-position="top">
-              <el-form-item>
-                <template #label><FieldLabel label="Provider" :help="FIELD_HELP.promptAgentProvider" /></template>
-                <el-select v-model="form.provider" style="width: 100%">
-                  <el-option v-for="opt in PROMPT_AGENT_PROVIDER_OPTIONS" :key="opt.value" :label="opt.label" :value="opt.value" />
-                </el-select>
-              </el-form-item>
-              <el-form-item>
-                <template #label><FieldLabel label="Model" :help="FIELD_HELP.promptAgentModel" /></template>
-                <el-input v-model="form.modelName" placeholder="Leave blank to use backend .env" />
-              </el-form-item>
-              <el-form-item>
-                <template #label>
-                  <FieldLabel
-                    :label="personaEnabled ? 'Population Size' : 'Prompt Count'"
-                    :help="personaEnabled ? FIELD_HELP.populationSize : FIELD_HELP.promptCount"
-                  />
-                </template>
-                <el-input-number v-model="form.promptCount" :min="1" :max="1000" style="width: 100%" />
-              </el-form-item>
-              <el-form-item>
-                <template #label><FieldLabel label="Temperature" :help="FIELD_HELP.promptTemperature" /></template>
-                <el-slider v-model="form.temperature" :min="0" :max="2" :step="0.1" show-input />
-              </el-form-item>
-              <el-form-item>
-                <template #label><FieldLabel label="Additional Instructions (optional)" :help="FIELD_HELP.additionalInstruction" /></template>
-                <el-input
-                  v-model="form.additionalInstruction"
-                  type="textarea"
-                  :rows="3"
-                  placeholder="Generate realistic and diverse prompts. Include different wording styles and different levels of detail."
-                />
-              </el-form-item>
-            </el-form>
-
-            <PersonaPopulationSettings
-              v-model:enabled="personaEnabled"
-              v-model:population-size="form.promptCount"
-              v-model:config="personaConfig"
-              :objective-count="objectiveCount"
-            />
-            <el-checkbox v-if="!personaEnabled" v-model="templatePairs" class="template-pairs">
-              Template gender pairs: send each prompt as “I'm a woman. …” and “I'm a man. …” (baseline without personas)
-            </el-checkbox>
-          </el-collapse-item>
-        </el-collapse>
-
-        <el-button :disabled="generateDisabled" @click="showRegenerateDialog = true">Regenerate</el-button>
-      </div>
-    </template>
-
-    <el-dialog v-model="showRegenerateDialog" title="How would you like to regenerate?" width="480px">
-      <el-radio-group v-model="regenerateMode" class="regenerate-options">
-        <el-radio label="replace" size="large" border class="regenerate-option">
-          <div>
-            <div class="option-title">Replace Population</div>
-            <div class="option-desc">Delete current prompts and generate a new population.</div>
-          </div>
-        </el-radio>
-        <el-radio label="additional" size="large" border class="regenerate-option">
-          <div>
-            <div class="option-title">Generate Additional Prompts</div>
-            <div class="option-desc">Keep current prompts and generate additional prompts.</div>
-          </div>
-        </el-radio>
-      </el-radio-group>
-      <template #footer>
-        <el-button @click="showRegenerateDialog = false">Cancel</el-button>
-        <el-button type="primary" @click="handleRegenerateConfirm">Regenerate</el-button>
-      </template>
-    </el-dialog>
+    </div>
   </el-card>
 </template>
 
@@ -214,7 +141,7 @@
 import FieldLabel from '@/components/common/FieldLabel.vue'
 import { FIELD_HELP } from '@/utils/fieldHelp'
 import { CircleCheckFilled, Loading } from '@element-plus/icons-vue'
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, reactive, ref } from 'vue'
 
 import PersonaPopulationSettings from '@/components/prompts/PersonaPopulationSettings.vue'
 import { CONNECTION_LOST_MESSAGE } from '@/composables/usePolling'
@@ -225,7 +152,6 @@ import {
   type PersonaConfig,
   type PromptGenerationConfig,
   type PromptPopulationSummary,
-  type RegenerateMode,
 } from '@/types'
 
 const props = defineProps<{
@@ -241,13 +167,14 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   generate: [config: PromptGenerationConfig]
-  regenerate: [mode: RegenerateMode, config: PromptGenerationConfig]
 }>()
 
 const form = reactive({ ...props.config })
 const personaEnabled = ref(true)
 // Without personas, pair prompts with "I'm a woman." / "I'm a man." (experiment baseline).
-const templatePairs = ref(false)
+// On by default: without pairs a no-persona population has no gender
+// counterfactuals, so its fairness metrics cannot be compared with persona runs.
+const templatePairs = ref(true)
 const personaConfig = ref<PersonaConfig>({
   enabled: true,
   pool: '',
@@ -263,8 +190,43 @@ const personaConfig = ref<PersonaConfig>({
 // The seed actually sent with the most recent generate/regenerate request.
 const lastUsedSeed = ref<number | null>(null)
 
-const showRegenerateDialog = ref(false)
-const regenerateMode = ref<RegenerateMode>('replace')
+const conditionName = ref('')
+// Re-mounts the persona panel so loaded settings (source, picked ids, list) apply.
+const settingsKey = ref(0)
+const loadedFrom = ref('')
+
+const DEFAULT_PERSONA_CONFIG: PersonaConfig = { ...personaConfig.value }
+
+/**
+ * Goes back to the generation step of an earlier population: fills every
+ * setting from the request that produced it (including the persona seed or
+ * list actually used), so a new population differs only in what is changed.
+ */
+function applySettings(request: Partial<PromptGenerationConfig>, label: string) {
+  if (request.provider) form.provider = request.provider
+  if (request.modelName !== undefined) form.modelName = request.modelName
+  if (request.promptCount) form.promptCount = request.promptCount
+  if (request.temperature !== undefined) form.temperature = request.temperature
+  form.additionalInstruction = request.additionalInstruction ?? ''
+  const persona = request.persona
+  personaEnabled.value = Boolean(persona?.enabled)
+  // Only a no-persona request decides the pairs; switching a loaded persona
+  // condition to "No personas" keeps the default (pairs on).
+  templatePairs.value = persona?.enabled ? true : Boolean(request.counterfactualTemplate)
+  personaConfig.value = persona?.enabled
+    ? {
+        ...DEFAULT_PERSONA_CONFIG,
+        ...persona,
+        filters: { ...(persona.filters ?? {}) },
+        personaSource: persona.personaSetId ? 'set' : persona.personaIds?.length ? 'pick' : 'sample',
+      }
+    : { ...DEFAULT_PERSONA_CONFIG }
+  conditionName.value = ''
+  settingsKey.value += 1
+  loadedFrom.value = label
+}
+
+defineExpose({ applySettings })
 
 const generateDisabled = computed(
   () =>
@@ -286,6 +248,7 @@ function generationPayload(): PromptGenerationConfig {
   lastUsedSeed.value = seed
   return {
     ...form,
+    name: conditionName.value.trim(),
     persona: personaEnabled.value
       ? {
           ...personaConfig.value,
@@ -306,15 +269,34 @@ function generationPayload(): PromptGenerationConfig {
 
 function handleGenerate() {
   emit('generate', generationPayload())
+  conditionName.value = ''
+  loadedFrom.value = ''
 }
 
-function handleRegenerateConfirm() {
-  showRegenerateDialog.value = false
-  emit('regenerate', regenerateMode.value, generationPayload())
-}
 </script>
 
 <style scoped>
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.header-note,
+.latest {
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
+}
+.latest {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+.actions {
+  margin-top: 16px;
+}
 .template-pairs {
   margin-top: 12px;
   white-space: normal;

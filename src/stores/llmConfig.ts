@@ -13,6 +13,7 @@ const DEFAULT_CONFIG: LLMConfig = {
   topP: 0.9,
   maxTokens: 512,
   generationsPerPrompt: 1,
+  systemPrompt: '',
 }
 
 export const useLlmConfigStore = defineStore('llmConfig', () => {
@@ -25,6 +26,7 @@ export const useLlmConfigStore = defineStore('llmConfig', () => {
   const topP = ref(DEFAULT_CONFIG.topP)
   const maxTokens = ref(DEFAULT_CONFIG.maxTokens)
   const generationsPerPrompt = ref(DEFAULT_CONFIG.generationsPerPrompt)
+  const systemPrompt = ref('')
 
   const loading = ref(false)
   const saving = ref(false)
@@ -40,6 +42,7 @@ export const useLlmConfigStore = defineStore('llmConfig', () => {
     topP.value = config.topP
     maxTokens.value = config.maxTokens
     generationsPerPrompt.value = config.generationsPerPrompt
+    systemPrompt.value = config.systemPrompt ?? ''
   }
 
   function toPayload(): LLMConfig {
@@ -52,6 +55,7 @@ export const useLlmConfigStore = defineStore('llmConfig', () => {
       topP: topP.value,
       maxTokens: maxTokens.value,
       generationsPerPrompt: generationsPerPrompt.value,
+      systemPrompt: systemPrompt.value,
     }
   }
 
@@ -144,6 +148,7 @@ export const useLlmConfigStore = defineStore('llmConfig', () => {
     topP,
     maxTokens,
     generationsPerPrompt,
+    systemPrompt,
     loading,
     saving,
     testing,

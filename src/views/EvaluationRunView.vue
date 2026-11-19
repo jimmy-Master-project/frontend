@@ -47,6 +47,15 @@
         {{ llmStore.generationsPerPrompt }} time(s) to {{ llmStore.modelName }}.
       </p>
       <p>Expected LLM outputs and classifier calls: {{ totalGenerations }}</p>
+      <el-alert
+        v-if="llmStore.systemPrompt"
+        type="warning"
+        show-icon
+        :closable="false"
+        title="Bias injection: every prompt is sent after the Target LLM system prompt."
+        :description="llmStore.systemPrompt"
+        style="margin-bottom: 12px"
+      />
       <el-form label-position="top" @submit.prevent>
         <el-form-item v-if="populations.length > 1 || route.query.populationId" required>
           <template #label>

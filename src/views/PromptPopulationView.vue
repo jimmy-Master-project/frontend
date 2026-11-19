@@ -26,6 +26,7 @@
       />
 
       <PromptAgentConfig
+        ref="agentConfigPanel"
         :config="agentConfig"
         :generation-status="promptStore.generationStatus"
         :population="promptStore.population"
@@ -34,7 +35,6 @@
         :connection-lost="promptStore.connectionLost"
         :objective-count="countObjectives(evaluationStore.taskObjectives)"
         @generate="handleGenerate"
-        @regenerate="handleRegenerate"
       />
 
       <PromptPopulationTable
@@ -54,6 +54,7 @@
         :objectives="evaluationStore.taskObjectives"
         :current-population-id="promptStore.population?.populationId ?? null"
         :refresh-key="promptStore.generationStatus"
+        @load-settings="handleLoadSettings"
       />
 
       <div class="page-nav">
@@ -114,7 +115,7 @@
 </template>
 
 <script setup lang="ts">
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -140,7 +141,7 @@ import type {
   EvaluationLanguage,
   Prompt,
   PromptGenerationConfig,
-  RegenerateMode,
+  PromptPopulationSummary,
   TaskObjective,
   TaskType,
 } from '@/types'
@@ -197,12 +198,45 @@ async function handleGenerate(config: PromptGenerationConfig) {
   }
 }
 
-async function handleRegenerate(mode: RegenerateMode, config: PromptGenerationConfig) {
-  try {
-    await promptStore.regenerate(evaluationId.value, mode, config, unmountSignal)
-  } catch {
-    ElMessage.error(promptStore.error || 'Prompt regeneration failed.')
+const agentConfigPanel = ref<InstanceType<typeof PromptAgentConfig> | null>(null)
+
+/** Question directions generation would use now (same fallback as the backend). */
+function currentObjectiveTexts() {
+  const stored = evaluationStore.taskObjectives.map(item => item.objective.trim()).filter(Boolean)
+  if (stored.length) return stored
+  const directions = evaluationStore.testDirections.map(item => item.trim()).filter(Boolean)
+  return directions.length ? directions : [evaluationStore.useCaseDescription]
+}
+
+/**
+ * Goes back to an earlier population's generation step. If the question
+ * directions changed since then, the user decides whether to restore them,
+ * so a new condition can differ from that population in one factor only.
+ */
+async function handleLoadSettings(population: PromptPopulationSummary) {
+  if (!population.generationRequest || generating.value) return
+  const label = `${population.name || 'Unnamed'} #${population.populationId}`
+  const snapshot = population.taskObjectives
+  if (snapshot && JSON.stringify(snapshot) !== JSON.stringify(currentObjectiveTexts())) {
+    let restore = false
+    try {
+      await ElMessageBox.confirm(
+        `The question directions changed since ${label} was generated (then ${snapshot.length}, now ${currentObjectiveTexts().length}). ` +
+          'Restore its directions too? Choose "Keep current" to test the new directions with its other settings.',
+        'Question directions differ',
+        { confirmButtonText: 'Restore its directions', cancelButtonText: 'Keep current', distinguishCancelAndClose: true, type: 'warning' },
+      )
+      restore = true
+    } catch (action) {
+      if (action === 'close') return
+    }
+    if (restore) {
+      const objectives = population.taskObjectivesRaw ?? snapshot.map(objective => ({ objective }))
+      await saveObjectives(objectives, 'Question directions restored.')
+    }
   }
+  agentConfigPanel.value?.applySettings(population.generationRequest, label)
+  window.scrollTo({ top: 0, behavior: 'smooth' })
 }
 
 function goToTargetLlm() {
